@@ -9,6 +9,7 @@
       </span>
       <Icon class="icon" v-if="emailStore.contentData.showReply" v-perm="'email:send'"  @click="openReply" icon="la:reply" width="21" height="21" />
       <Icon class="icon" v-if="emailStore.contentData.showReply" v-perm="'email:send'"  @click="openForward" icon="iconoir:arrow-up-right" width="20" height="20" />
+      <el-button v-if="canClaim" size="small" @click="openClaim">{{ t('claimMail') }}</el-button>
     </div>
     <div></div>
     <el-scrollbar class="scrollbar">
@@ -71,6 +72,25 @@
         show-progress
         @close="showPreview = false"
     />
+    <el-dialog v-model="claimVisible" :title="t('claimMail')" width="min(420px, 92vw)"
+               :close-on-click-modal="!claimSaving" :close-on-press-escape="!claimSaving"
+               :show-close="!claimSaving" :before-close="closeClaim">
+      <div v-loading="claimLoading" class="claim-form">
+        <p>{{ t('claimDescription') }}</p>
+        <p>{{ t('recipient') }}：{{ claimRecipient }}</p>
+        <el-select v-if="claimTargets.length" v-model="claimAccountId" :placeholder="t('claimSelectAccount')">
+          <el-option v-for="target in claimTargets" :key="target.accountId"
+                     :label="target.email + ' — ' + target.userEmail" :value="target.accountId"/>
+        </el-select>
+        <el-alert v-else-if="!claimLoading" :title="t('claimCreateFirst')" type="info" :closable="false"/>
+      </div>
+      <template #footer>
+        <el-button :disabled="claimSaving || claimLoading" @click="loadClaimTargets">{{ t('claimReload') }}</el-button>
+        <el-button :disabled="claimSaving" @click="claimVisible = false">{{ t('cancel') }}</el-button>
+        <el-button type="primary" :loading="claimSaving" :disabled="!claimAccountId || claimLoading"
+                   @click="submitClaim">{{ t('confirm') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 <script setup>
@@ -88,7 +108,8 @@ import {getExtName, formatBytes} from "@/utils/file-utils.js";
 import {cvtR2Url,toOssDomain} from "@/utils/convert.js";
 import {getIconByName} from "@/utils/icon-utils.js";
 import {useSettingStore} from "@/store/setting.js";
-import {allEmailDelete} from "@/request/all-email.js";
+import {allEmailDelete, claimAccounts, claimEmail} from "@/request/all-email.js";
+import {useUserStore} from "@/store/user.js";
 import {useUiStore} from "@/store/ui.js";
 import {useI18n} from "vue-i18n";
 import {EmailUnreadEnum} from "@/enums/email-enum.js";
@@ -109,6 +130,66 @@ const showPreview = ref(false)
 const srcList = reactive([])
 
 const { t } = useI18n()
+const userStore = useUserStore();
+// The backend also checks the administrator identity; this only controls visibility.
+const canClaim = computed(() => userStore.user.permKeys?.includes('*')
+    && emailStore.contentData.delType === 'physics'
+    && email.value.status === 7 && email.value.type === 0 && email.value.isDel === 0);
+const claimVisible = ref(false);
+const claimLoading = ref(false);
+const claimSaving = ref(false);
+const claimRecipient = ref('');
+const claimTargets = ref([]);
+const claimAccountId = ref(null);
+let claimEmailId = 0;
+
+function closeClaim(done) {
+  if (!claimSaving.value) done();
+}
+
+async function loadClaimTargets() {
+  claimLoading.value = true;
+  claimTargets.value = [];
+  claimAccountId.value = null;
+  try {
+    const data = await claimAccounts(claimEmailId);
+    claimRecipient.value = data.toEmail;
+    claimTargets.value = data.accounts;
+    if (data.accounts.length === 1) claimAccountId.value = data.accounts[0].accountId;
+  } catch {
+    // The shared request interceptor displays permission or stale-mail errors.
+    claimVisible.value = false;
+  } finally {
+    claimLoading.value = false;
+  }
+}
+
+async function openClaim() {
+  claimEmailId = email.value.emailId;
+  claimRecipient.value = email.value.toEmail || '';
+  claimVisible.value = true;
+  await loadClaimTargets();
+}
+
+async function submitClaim() {
+  if (claimSaving.value || !claimAccountId.value) return;
+  claimSaving.value = true;
+  try {
+    const updated = await claimEmail(claimEmailId, claimAccountId.value);
+    // Invalidate cached ownership so returning to the old list cannot show stale data.
+    delete emailStore.detailMap[claimEmailId];
+    Object.assign(email.value, updated);
+    emailStore.claimRevision++;
+    claimVisible.value = false;
+    ElMessage.success(t('claimSuccess'));
+    router.back();
+  } catch {
+    // Keep the dialog open so the administrator can reload or cancel after a conflict.
+  } finally {
+    claimSaving.value = false;
+  }
+}
+
 watch(() => accountStore.currentAccountId, () => {
   handleBack()
 })
@@ -162,6 +243,7 @@ onUnmounted(() => {
 function handleKeyDown(event) {
   if (event.key !== 'Escape') return;
   if (showPreview.value) return;
+  if (claimVisible.value) return;
   if (document.querySelector('.el-message-box')) return;
   const writeBox = document.querySelector('.write-box');
   if (writeBox && writeBox.offsetParent !== null) return;
@@ -266,6 +348,12 @@ const handleDelete = () => {
 }
 </script>
 <style scoped lang="scss">
+.claim-form {
+  min-height: 110px;
+  overflow-wrap: anywhere;
+  .el-select { width: 100%; }
+}
+
 .box {
   height: 100%;
   overflow: hidden;

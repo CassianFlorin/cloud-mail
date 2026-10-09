@@ -303,6 +303,7 @@ const {t} = useI18n()
 const settingStore = useSettingStore()
 const uiStore = useUiStore();
 const emailStore = useEmailStore();
+let lastClaimRevision = emailStore.claimRevision;
 const loading = ref(false);
 const followLoading = ref(false);
 const noLoading = ref(false);
@@ -359,6 +360,11 @@ defineExpose({
 })
 
 onActivated(() => {
+  // Cached lists must reload ownership after an administrator claims a message.
+  if (lastClaimRevision !== emailStore.claimRevision) {
+    lastClaimRevision = emailStore.claimRevision;
+    refreshList();
+  }
   requestAnimationFrame(() => {
     const index = scrollTop / itemHeight.value
     scrollbarRef.value?.scrollTo(index);

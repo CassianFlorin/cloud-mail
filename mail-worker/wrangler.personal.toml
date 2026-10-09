@@ -1,0 +1,44 @@
+# Personal resource bindings remain separate from upstream deployment defaults.
+name = "cloud-mail"
+main = "src/index.js"
+account_id = "77dd0e0c8e34a5e421754af7c18dbb97"
+compatibility_date = "2025-06-04"
+workers_dev = true
+preview_urls = false
+
+# Custom Domains provide HTTPS and DNS for the website, not email delivery.
+[[routes]]
+pattern = "mail.florin-studio.com"
+custom_domain = true
+
+[[d1_databases]]
+binding = "db"
+database_name = "cloud-mail"
+database_id = "6c2302e5-8ecd-4328-bf06-44faefbd193f"
+
+[[kv_namespaces]]
+binding = "kv"
+id = "5375f4835d434bc8905cb78b862b3c2c"
+
+[observability]
+enabled = true
+
+[ai]
+binding = "ai"
+
+[assets]
+binding = "assets"
+directory = "./dist"
+not_found_handling = "single-page-application"
+run_worker_first = true
+
+[triggers]
+crons = ["0 * * * *"]
+
+[vars]
+domain = ["florin-studio.com"]
+admin = "admin@florin-studio.com"
+analysis_cache = false
+orm_log = false
+
+# jwt_secret is injected with Wrangler Secrets, never committed in this file.

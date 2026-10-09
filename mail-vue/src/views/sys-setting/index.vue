@@ -87,49 +87,58 @@
           </div>
 
           <!-- Personalization Settings Card -->
-          <div class="settings-card">
-            <div class="card-title">{{ $t('customization') }}</div>
-            <div class="card-content">
-              <div class="setting-item">
-                <div class="title-item"><span>{{ $t('websiteTitle') }}</span></div>
-                <div class="email-title">
-                  <span>{{ setting.title }}</span>
-                  <el-button class="opt-button" size="small" type="primary" @click="editTitleShow = true">
-                    <Icon icon="lsicon:edit-outline" width="16" height="16"/>
-                  </el-button>
+          <div class="settings-card appearance-card">
+            <div class="card-title">
+              {{ $t('customization') }}
+              <span class="appearance-subtitle">{{ $t('appearanceSubtitle') }}</span>
+            </div>
+            <div class="appearance-content">
+              <div class="appearance-preview">
+                <div class="appearance-preview-label">
+                  <span>{{ $t('loginPreview') }}</span>
+                  <span class="appearance-preview-badge">{{ $t('appearanceLive') }}</span>
                 </div>
+                <login-preview :title="setting.title" :background="setting.background ? cvtR2Url(setting.background) : ''"
+                               :opacity="loginOpacity" :dark="uiStore.dark"
+                               :domain="settingStore.domainList[0] || ''" :hide-domain="setting.loginDomain === 1"/>
+                <p class="appearance-help">{{ $t('loginPreviewHint') }}</p>
               </div>
-              <div class="setting-item">
-                <div class="title-item"><span>{{ $t('loginBoxOpacity') }}</span></div>
-                <div>
-                  <el-input-number size="small" v-model="loginOpacity" @change="opacityChange" :precision="2"
-                                   :step="0.01" :max="1" :min="0"/>
-                </div>
-              </div>
-              <div class="setting-item personalized">
-                <div><span>{{ $t('loginBackground') }}</span></div>
-                <div>
-                  <el-image
-                      class="background"
-                      :src="cvtR2Url(setting.background)"
-                      :preview-src-list="[cvtR2Url(setting.background)]"
-                      show-progress
-                      fit="cover"
-                  >
-                    <template #error>
-                      <div class="error-image">
-                        <Icon icon="ph:image" width="24" height="24"/>
-                      </div>
-                    </template>
-                  </el-image>
-                  <div class="background-btn">
-                    <el-button class="opt-button" size="small" type="primary" @click="openSetBackground">
-                      <Icon icon="lsicon:edit-outline" width="16" height="16"/>
-                    </el-button>
-                    <el-button class="opt-button" size="small" type="primary" @click="delBackground">
-                      <Icon icon="material-symbols:delete-outline-rounded" width="16" height="16"/>
+              <div class="appearance-controls">
+                <div class="appearance-field">
+                  <span class="appearance-label">{{ $t('websiteTitle') }}</span>
+                  <div class="appearance-title-value">
+                    <strong>{{ setting.title }}</strong>
+                    <el-button size="small" :disabled="settingLoading" @click="editTitle = setting.title; editTitleShow = true">
+                      {{ $t('appearanceEditTitle') }}
                     </el-button>
                   </div>
+                </div>
+                <div class="appearance-field">
+                  <label class="appearance-label" for="login-panel-opacity">{{ $t('loginBoxOpacity') }}</label>
+                  <div class="appearance-opacity">
+                    <el-slider id="login-panel-opacity" v-model="loginOpacity" :min="0" :max="1" :step="0.01"
+                               :disabled="settingLoading" :format-tooltip="formatLoginOpacity" @change="opacityChange"/>
+                    <el-input-number v-model="loginOpacity" :precision="2" :step="0.05" :max="1" :min="0"
+                                     size="small" :disabled="settingLoading" :aria-label="$t('loginBoxOpacity')"
+                                     @change="opacityChange"/>
+                  </div>
+                  <p class="appearance-help">{{ $t('loginOpacityHint') }}</p>
+                </div>
+                <div class="appearance-field">
+                  <span class="appearance-label">{{ $t('loginBackground') }}</span>
+                  <span class="appearance-background-status">
+                    <Icon :icon="setting.background ? 'ph:image' : 'ph:cloud-sun'" width="18" height="18"/>
+                    {{ setting.background ? $t('appearanceCustomBackground') : $t('appearanceDefaultBackground') }}
+                  </span>
+                  <div class="appearance-actions">
+                    <el-button type="primary" :disabled="settingLoading" @click="openSetBackground">
+                      {{ $t('appearanceChangeBackground') }}
+                    </el-button>
+                    <el-button v-if="setting.background" :disabled="settingLoading" @click="delBackground">
+                      {{ $t('appearanceRestoreBackground') }}
+                    </el-button>
+                  </div>
+                  <p class="appearance-help">{{ $t('appearanceBackgroundHint') }}</p>
                 </div>
               </div>
             </div>
@@ -944,6 +953,7 @@ import {storeToRefs} from "pinia";
 import {debounce} from 'lodash-es'
 import {isDomain, isEmail, isIpUrl} from "@/utils/verify-utils.js";
 import loading from "@/components/loading/index.vue";
+import LoginPreview from "@/components/login-preview/index.vue";
 import {getTextWidth} from "@/utils/text.js";
 import {fileToBase64} from "@/utils/file-utils.js"
 import {useI18n} from 'vue-i18n';
@@ -985,6 +995,10 @@ const settingLoading = ref(false)
 const clearS3Loading = ref(false)
 const r2DomainInput = ref('')
 const loginOpacity = ref(0)
+// The slider previews immediately; the existing debounced handler saves changes.
+function formatLoginOpacity(value) {
+  return `${Math.round(value * 100)}%`;
+}
 const minEmailPrefix = ref(0)
 const emailPrefixFilter = ref([])
 const autoCleanDays = ref(0)
@@ -1859,6 +1873,112 @@ function editSetting(settingForm, refreshStatus = true) {
   flex-direction: column;
   gap: 10px;
 }
+
+.appearance-subtitle {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: normal;
+  color: var(--el-text-color-secondary);
+}
+
+.appearance-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 28px;
+  padding: 24px 20px;
+
+  @media (max-width: 720px) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+    padding: 18px;
+  }
+}
+
+.appearance-preview-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.appearance-preview-badge {
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+
+.appearance-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.appearance-field {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.appearance-label {
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.appearance-title-value {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  strong {
+    min-width: 0;
+    font-size: 16px;
+    overflow-wrap: anywhere;
+  }
+
+  .el-button { flex-shrink: 0; }
+}
+
+.appearance-opacity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-left: 8px;
+
+  .el-slider { flex: 1; min-width: 0; }
+  .el-input-number { width: 112px; flex-shrink: 0; }
+}
+
+.appearance-background-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+}
+
+.appearance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+
+  .el-button + .el-button { margin-left: 0; }
+}
+
+.appearance-help {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
+}
+
+.appearance-preview > .appearance-help { margin-top: 10px; }
 
 .setting-item {
   display: grid;
