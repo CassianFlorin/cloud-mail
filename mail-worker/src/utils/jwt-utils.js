@@ -47,6 +47,8 @@ const jwtUtils = {
 	},
 
 	async verifyToken(c, token) {
+		// Anonymous file requests are expected; avoid logging a split error.
+		if (typeof token !== 'string' || !token) return null;
 		try {
 			const [headerB64, payloadB64, signatureB64] = token.split('.');
 

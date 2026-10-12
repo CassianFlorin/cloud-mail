@@ -5,6 +5,8 @@ The local mail-claim feature was deployed on the same date as Worker version
 `f2791f3c-659b-4a44-a1c3-9fdbdbc5049f`.
 The personalization card update was subsequently deployed as Worker version
 `5a65bbe3-b860-4514-851e-b3cccadcc8f6`.
+The private R2 transition was deployed on 2026-10-12 as Worker version
+`b76503cc-40d2-4d8d-abc6-32ca2adf892f`.
 
 ## Endpoints
 
@@ -32,8 +34,17 @@ The personalization card update was subsequently deployed as Worker version
   claimed. Creating a mailbox alone does not claim its historical messages.
 - Plus aliases, such as `admin+github@florin-studio.com`, resolve to an existing
   base account when no exact account exists.
-- Mail bodies are stored in D1; attachments use the application's KV fallback.
-- R2, forwarding, AI extraction, and automatic deletion are not enabled.
+- Mail bodies remain in D1. New attachments and uploaded backgrounds use the
+  private R2 Standard bucket `cloud-mail-files` through the `r2` Worker binding.
+- R2 public development access is disabled and no bucket custom domain is
+  connected. The application object-storage domain may stay empty or point to
+  the authenticated Worker website origin; never set a public bucket domain.
+- Reads fall back to KV when an object is absent from R2. KV continues to hold
+  settings, login sessions, and counters/caches; never delete the namespace.
+- Attachment API and legacy file routes require an active session and an
+  attachment record owned by the caller (or administrator/all-mail access).
+  Only the currently configured login background is served without a session.
+- Forwarding, AI extraction, and automatic deletion remain disabled.
 - Resend uses a dedicated sending-only key restricted to `florin-studio.com`.
   The key is stored in application settings, never in this repository.
 - The four records in `resend-dns.zone` have been added to Cloudflare DNS.
@@ -65,12 +76,54 @@ pnpm run build
 
 cd /Users/cassyx/OpenSourceProject/cloud-mail/mail-worker
 pnpm install --frozen-lockfile
+pnpm run test:claim
+pnpm run test:storage
 pnpm exec wrangler deploy --config wrangler.personal.toml
 ```
 
 Use the personal configuration, not the default `pnpm deploy` script.
 The bootstrap database is already initialized; do not replay initialization
 exports or migrations as a routine deployment step.
+
+## Private R2 transition on 2026-10-12
+
+The owner enabled the R2 subscription in the Cloudflare dashboard. The bucket
+was created in Standard storage and checked with:
+
+```sh
+pnpm exec wrangler r2 bucket dev-url get cloud-mail-files --config wrangler.personal.toml
+pnpm exec wrangler r2 bucket domain list cloud-mail-files --config wrangler.personal.toml
+```
+
+The development URL is disabled; the custom-domain list is empty. No public
+bucket URL or new S3 access key is needed for the Worker binding.
+
+The pre-transition inventory contained 0 attachment records and the default
+login background. KV held only the `setting:` and `auth-uid:1`
+keys. Consequently there were no historical file objects to copy or delete;
+configuration and authentication data must remain in KV.
+
+The compatibility layer supports both R2 objects and legacy KV files and
+preserves MIME type/disposition. Private file responses use `private, no-store`.
+Deleting a file also deletes its legacy file copy, so fallback cannot revive a
+removed file. This operation never targets settings or cache prefixes.
+
+Validation includes the storage/authorization regression suite, a frontend
+production build, and a local browser fixture for inline images, previews and
+byte-for-byte downloads. A remote R2 binding was also exercised through the
+actual Worker handlers using local test identities, KV and SQLite: both
+authenticated attachment paths returned the real R2 bytes and metadata; a
+missing R2 object fell back to the test KV file. That validation wrote no
+production D1/KV data, sent no email, and removed its temporary R2 object.
+After the production deployment, the website returned HTTP 200, both anonymous
+attachment routes returned HTTP 401, and a non-current background returned
+HTTP 404. The existing website object-storage origin and KV settings/session
+keys were retained.
+
+For future transitions with existing files, inventory only `attachments/`
+and `static/background/` objects, preserve object keys and HTTP metadata, and
+compare bytes before removing any KV file copy. Keep fallback enabled during
+the transition and never treat a settings/authentication key as a file.
 
 ## Verification
 

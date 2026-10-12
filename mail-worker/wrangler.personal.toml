@@ -20,6 +20,11 @@ database_id = "6c2302e5-8ecd-4328-bf06-44faefbd193f"
 binding = "kv"
 id = "5375f4835d434bc8905cb78b862b3c2c"
 
+# Private file storage: no r2.dev URL or public custom domain is needed.
+[[r2_buckets]]
+binding = "r2"
+bucket_name = "cloud-mail-files"
+
 [observability]
 enabled = true
 

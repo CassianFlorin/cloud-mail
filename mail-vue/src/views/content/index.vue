@@ -36,7 +36,7 @@
             <el-alert v-if="email.status === 5" :closable="false" :title="$t('delayed')" class="email-msg" type="warning" show-icon />
           </div>
           <el-scrollbar class="htm-scrollbar" :class="!email.attList?.length ? 'bottom-distance' : ''">
-            <ShadowHtml class="shadow-html" :html="formatImage(email.content)" v-if="email.content" />
+            <ShadowHtml class="shadow-html" :html="privateContent" v-if="email.content" />
             <pre v-else class="email-text" >{{email.text}}</pre>
           </el-scrollbar>
           <div class="att" v-if="email.attList?.length > 0">
@@ -56,7 +56,7 @@
                 <div class="att-size">{{ formatBytes(att.size) }}</div>
                 <div class="opt-icon att-icon">
                   <Icon v-if="isImage(att.filename)" icon="hugeicons:view" width="22" height="22" @click="showImage(att.key)"/>
-                  <a :href="cvtR2Url(att.key)" download>
+                  <a href="#" @click.prevent="downloadAttachment(att)">
                     <Icon icon="system-uicons:push-down" width="22" height="22"/>
                   </a>
                 </div>
@@ -105,7 +105,7 @@ import {useAccountStore} from "@/store/account.js";
 import {formatDetailDate} from "@/utils/day.js";
 import {starAdd, starCancel} from "@/request/star.js";
 import {getExtName, formatBytes} from "@/utils/file-utils.js";
-import {cvtR2Url,toOssDomain} from "@/utils/convert.js";
+import {toOssDomain} from "@/utils/convert.js";
 import {getIconByName} from "@/utils/icon-utils.js";
 import {useSettingStore} from "@/store/setting.js";
 import {allEmailDelete, claimAccounts, claimEmail} from "@/request/all-email.js";
@@ -113,6 +113,7 @@ import {useUserStore} from "@/store/user.js";
 import {useUiStore} from "@/store/ui.js";
 import {useI18n} from "vue-i18n";
 import {EmailUnreadEnum} from "@/enums/email-enum.js";
+import {fetchAttachmentBlob} from "@/utils/private-attachments.js";
 
 const uiStore = useUiStore();
 const settingStore = useSettingStore();
@@ -128,6 +129,53 @@ const email = computed(() => emailStore.contentData.email || {
 })
 const showPreview = ref(false)
 const srcList = reactive([])
+const privateContent = ref('');
+const objectUrls = new Map();
+let contentRevision = 0;
+
+function releaseObjectUrls() {
+  for (const url of objectUrls.values()) URL.revokeObjectURL(url);
+  objectUrls.clear();
+}
+
+async function attachmentUrl(key) {
+  if (objectUrls.has(key)) return objectUrls.get(key);
+  const revision = contentRevision;
+  const blob = await fetchAttachmentBlob(key);
+  if (revision !== contentRevision) throw new Error('Email changed');
+  const url = URL.createObjectURL(blob);
+  objectUrls.set(key, url);
+  return url;
+}
+
+// Load stored inline images with the session header, then expose only local
+// blob URLs to the HTML renderer. Never insert bearer tokens into image URLs.
+watch(() => [email.value.emailId, email.value.content], async () => {
+  const revision = ++contentRevision;
+  releaseObjectUrls();
+  privateContent.value = '';
+  const document = new DOMParser().parseFromString(formatImage(email.value.content), 'text/html');
+  const images = [...document.querySelectorAll('img')];
+  await Promise.all(images.map(async image => {
+    const src = image.getAttribute('src') || '';
+    const domain = toOssDomain(settingStore.settings.r2Domain);
+    // Existing messages can use either a relative key or the configured
+    // Worker website origin. Both must use authenticated blob reads.
+    const prefix = domain && src.startsWith(domain + '/attachments/')
+      ? domain + '/' : window.location.origin + '/';
+    const relative = src.startsWith(prefix) ? src.slice(prefix.length) : src;
+    const path = relative.replace(/^\/?attachments\//, 'attachments/');
+    if (!path.startsWith('attachments/')) return;
+    image.removeAttribute('src');
+    try {
+      image.setAttribute('src', await attachmentUrl(path));
+    } catch {
+      // Keep the email readable when one stored image is unavailable.
+    }
+  }));
+  // Keep the original body styles and head styles used by HTML email layouts.
+  if (revision === contentRevision) privateContent.value = document.documentElement.outerHTML;
+}, { immediate: true });
 
 const { t } = useI18n()
 const userStore = useUserStore();
@@ -235,6 +283,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  contentRevision++;
+  releaseObjectUrls();
   emailStore.contentData.showUnread = false;
   readRequesting = false
   window.removeEventListener('keydown', handleKeyDown);
@@ -268,14 +318,29 @@ function formatImage(content) {
   return  content.replace(/{{domain}}/g, toOssDomain(domain) + '/');
 }
 
-function showImage(key) {
+async function showImage(key) {
   if (!isImage(key)) return;
-  const url = cvtR2Url(key)
-  srcList.length = 0
-  srcList.push(url)
-  showPreview.value = true
+  try {
+    const url = await attachmentUrl(key);
+    srcList.length = 0
+    srcList.push(url)
+    showPreview.value = true
+  } catch {
+    ElMessage.error(t('reqFailErrorMsg'));
+  }
 }
 
+async function downloadAttachment(att) {
+  try {
+    const url = await attachmentUrl(att.key);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = att.filename || 'attachment';
+    link.click();
+  } catch {
+    ElMessage.error(t('reqFailErrorMsg'));
+  }
+}
 function isImage(filename) {
   return ['png', 'jpg', 'jpeg', 'bmp', 'gif','jfif'].includes(getExtName(filename))
 }
