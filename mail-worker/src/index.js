@@ -3,7 +3,8 @@ import { email } from './email/email';
 import userService from './service/user-service';
 import verifyRecordService from './service/verify-record-service';
 import emailService from './service/email-service';
-import kvObjService from './service/kv-obj-service';
+import r2Service from './service/r2-service';
+import settingService from './service/setting-service';
 import oauthService from './service/oauth-service';
 import analysisService from './service/analysis-service';
 export default {
@@ -17,8 +18,19 @@ export default {
 			return app.fetch(req, env, ctx);
 		}
 
-		 if (['/static/','/attachments/'].some(p => url.pathname.startsWith(p))) {
-			 return await kvObjService.toObjResp( { env }, url.pathname.substring(1));
+		 if (url.pathname.startsWith('/attachments/')) {
+			 // Legacy URLs now use the same session and ownership checks as the API.
+			 url.pathname = '/oss' + url.pathname;
+			 return app.fetch(new Request(url.toString(), req), env, ctx);
+		 }
+
+		 if (url.pathname.startsWith('/static/background/')) {
+			 const key = decodeURIComponent(url.pathname.substring(1));
+			 const c = { env };
+			 const setting = await settingService.query(c);
+			 // Only the configured login background is intentionally public.
+			 if (key !== setting.background) return new Response(null, { status: 404 });
+			 return r2Service.toObjResp(c, key);
 		 }
 
 		return env.assets.fetch(req);

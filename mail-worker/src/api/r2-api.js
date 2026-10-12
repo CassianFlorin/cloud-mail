@@ -1,15 +1,14 @@
-import r2Service from '../service/r2-service';
+import objectAccessService from '../service/object-access-service';
 import app from '../hono/hono';
 
 app.get('/oss/*', async (c) => {
-	const key = c.req.path.split('/oss/')[1];
-	const obj = await r2Service.getObj(c, key);
-	return new Response(obj.body, {
-		headers: {
-			'Content-Type': obj.httpMetadata?.contentType || 'application/octet-stream',
-			'Content-Disposition': obj.httpMetadata?.contentDisposition || null
-		}
-	});
+	let key;
+	try {
+		key = decodeURIComponent(c.req.path.split('/oss/')[1]);
+	} catch {
+		return new Response(null, { status: 400 });
+	}
+	return objectAccessService.attachment(c, key);
 });
 
 

@@ -48,12 +48,45 @@ const r2Service = {
 		}
 
 		if (storageType === 'R2') {
-			return await c.env.r2.get(key);
+			// Existing KV files stay readable while migration is in progress.
+			const object = await c.env.r2.get(key);
+			return object ?? await kvObjService.getObj(c, key);
 		}
 
 		if (storageType === 'S3') {
 			return await s3Service.getObj(c, key);
 		}
+	},
+
+	async toObjResp(c, key, privateFile = false) {
+		const object = await this.getObj(c, key);
+		if (!object) return new Response(null, { status: 404 });
+
+		// R2 returns object metadata; KV and S3 already return a Response.
+		const headers = object instanceof Response
+			? new Headers(object.headers) : new Headers();
+		if (!(object instanceof Response)) {
+			// Copy metadata locally so remote binding proxies never need to
+			// serialize a Headers instance across their runtime boundary.
+			const metadata = object.httpMetadata || {};
+			for (const [field, header] of Object.entries({
+				contentType: 'Content-Type',
+				contentDisposition: 'Content-Disposition',
+				contentEncoding: 'Content-Encoding',
+				contentLanguage: 'Content-Language',
+				cacheControl: 'Cache-Control'
+			})) {
+				if (metadata[field]) headers.set(header, metadata[field]);
+			}
+			if (metadata.cacheExpiry) headers.set('Expires', new Date(metadata.cacheExpiry).toUTCString());
+			if (object.httpEtag) headers.set('ETag', object.httpEtag);
+		}
+		if (!headers.has('Content-Type')) {
+			headers.set('Content-Type', 'application/octet-stream');
+		}
+		headers.set('X-Content-Type-Options', 'nosniff');
+		if (privateFile) headers.set('Cache-Control', 'private, no-store');
+		return new Response(object.body, { headers });
 	},
 
 	async delete(c, key) {
@@ -66,6 +99,8 @@ const r2Service = {
 
 		if (storageType === 'R2') {
 			await c.env.r2.delete(key);
+			// Removing a file must also remove its legacy copy, or fallback revives it.
+			await kvObjService.deleteObj(c, key);
 		}
 
 		if (storageType === 'S3'){

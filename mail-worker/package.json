@@ -4,6 +4,7 @@
 	"private": true,
 	"scripts": {
 		"test:claim": "node test/run-mail-claim.mjs",
+		"test:storage": "node test/run-storage.mjs",
 		"dev": "wrangler dev --config wrangler-dev.toml",
 		"test": "wrangler deploy --config wrangler-test.toml",
 		"deploy": "wrangler deploy",
