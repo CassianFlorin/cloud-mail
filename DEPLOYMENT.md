@@ -7,6 +7,10 @@ The personalization card update was subsequently deployed as Worker version
 `5a65bbe3-b860-4514-851e-b3cccadcc8f6`.
 The private R2 transition was deployed on 2026-10-12 as Worker version
 `b76503cc-40d2-4d8d-abc6-32ca2adf892f`.
+The structured Telegram notifications were deployed on 2026-10-14 as Worker
+version `3f6734c3-b1ee-4c6a-889e-b5d3f0b8acf3`.
+The forwarded-email preview cleanup was deployed on 2026-10-14 as Worker
+version `bc2b88d0-f901-4a61-9e1e-3ddd5cdf18c4`.
 
 ## Endpoints
 
@@ -78,6 +82,7 @@ cd /Users/cassyx/OpenSourceProject/cloud-mail/mail-worker
 pnpm install --frozen-lockfile
 pnpm run test:claim
 pnpm run test:storage
+pnpm run test:telegram
 pnpm exec wrangler deploy --config wrangler.personal.toml
 ```
 
@@ -124,6 +129,49 @@ For future transitions with existing files, inventory only `attachments/`
 and `static/background/` objects, preserve object keys and HTTP metadata, and
 compare bytes before removing any KV file copy. Keep fallback enabled during
 the transition and never treat a settings/authentication key as a file.
+
+## Structured Telegram notifications (2026-10-14)
+
+New incoming mail uses Telegram `sendRichMessage` with native heading,
+paragraph, divider, quotation, and footer blocks. The existing sender,
+recipient, and body visibility settings still apply. Body previews contain
+up to 500 visible characters; previews over 250 characters use an expandable
+quotation. The original email remains available through the signed View
+button, and valid verification codes retain a native clipboard button.
+
+Preview links display a compact hostname while retaining their original
+destination. Leading ASCII banners and a repeated subject are removed.
+Non-breaking spaces remain word separators and emoji joiners are preserved.
+Sender-supplied markup is treated as text rather than Telegram formatting.
+
+The 17 notification tests passed with mocked Telegram requests. The 10
+mail-claim and 10 private-storage regressions and Wrangler release dry run
+also passed. After deployment, the latest deployment assigned 100% of traffic
+to `3f6734c3-b1ee-4c6a-889e-b5d3f0b8acf3`, the website returned HTTP 200, and
+an invalid signed View token returned the expected Access denied page.
+Subsequent external delivery tests confirmed real Telegram notifications.
+The owner verified the DeepL preview and original HTML detail view in Telegram.
+Existing Telegram messages are not rewritten by this deployment.
+
+## Forwarded-email preview cleanup (2026-10-14)
+
+Telegram previews remove leading `>` quote markers, including nested `>>`
+and `> >` prefixes. Quote-only lines become paragraph gaps, with consecutive
+blank lines reduced to one gap. Inline greater-than signs, forwarded metadata,
+link destinations, and original stored mail bodies are retained. Plain-text
+and HTML-only messages use the same cleanup; Telegram supplies the quotation
+styling. Internal deliveries continue without Telegram notifications.
+
+All 21 notification tests passed, including forwarded metadata, nested quotes,
+HTML-only quotes, inline signs, and preservation of the original body. The 10
+mail-claim tests, 10 storage tests, and Wrangler dry run also passed.
+Deployment `998150e5-d9c9-463c-a226-2de8958e1b43` assigns 100% of traffic to
+`bc2b88d0-f901-4a61-9e1e-3ddd5cdf18c4`. The website returned HTTP 200 and
+an invalid signed View token returned the expected Access denied page.
+This cleanup applies to future notifications; existing Telegram messages
+are not rewritten. No real email or Telegram message was sent by the agent for
+this release. The owner subsequently forwarded an external email and confirmed
+the cleaned preview with a Telegram screenshot.
 
 ## Verification
 
