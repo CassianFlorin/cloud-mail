@@ -1,17 +1,11 @@
 import orm from '../entity/orm';
 import email from '../entity/email';
 import settingService from './setting-service';
-import dayjs from 'dayjs';
-import utc from 'dayjs/plugin/utc';
-import timezone from 'dayjs/plugin/timezone';
-dayjs.extend(utc);
-dayjs.extend(timezone);
 import { eq } from 'drizzle-orm';
 import jwtUtils from '../utils/jwt-utils';
 import emailMsgTemplate from '../template/email-msg';
 import emailTextTemplate from '../template/email-text';
 import emailHtmlTemplate from '../template/email-html';
-import verifyUtils from '../utils/verify-utils';
 import domainUtils from "../utils/domain-uitls";
 
 const telegramService = {
@@ -47,7 +41,7 @@ const telegramService = {
 
 		const { tgBotToken, tgChatId, customDomain, tgMsgTo, tgMsgFrom, tgMsgText } = await settingService.query(c);
 
-		const tgChatIds = tgChatId.split(',');
+		const tgChatIds = tgChatId.split(',').map(chatId => chatId.trim()).filter(Boolean);
 
 		const jwtToken = await jwtUtils.generateToken(c, { emailId: email.emailId })
 
@@ -55,32 +49,34 @@ const telegramService = {
 		const inlineKeyboard = [
 			[
 				{
-					text: 'View',
+					text: '查看完整邮件',
 					web_app: { url: webAppUrl }
 				}
 			]
 		];
 
-		if (email.code) {
+		const code = String(email.code || '');
+		// Telegram's native clipboard button accepts 1-256 characters.
+		if (code && Array.from(code).length <= 256) {
 			inlineKeyboard.push([
 				{
-					text: email.code,
-					copy_text: { text: email.code }
+					text: `复制验证码 ${code}`,
+					copy_text: { text: code }
 				}
 			]);
 		}
 
+		const richMessage = emailMsgTemplate(email, tgMsgTo, tgMsgFrom, tgMsgText);
 		await Promise.all(tgChatIds.map(async chatId => {
 			try {
-				const res = await fetch(`https://api.telegram.org/bot${tgBotToken}/sendMessage`, {
+				const res = await fetch(`https://api.telegram.org/bot${tgBotToken}/sendRichMessage`, {
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json'
 					},
 					body: JSON.stringify({
 						chat_id: chatId,
-						parse_mode: 'HTML',
-						text: emailMsgTemplate(email, tgMsgTo, tgMsgFrom, tgMsgText),
+						rich_message: richMessage,
 						reply_markup: {
 							inline_keyboard: inlineKeyboard
 						}

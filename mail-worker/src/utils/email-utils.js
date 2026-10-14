@@ -26,12 +26,14 @@ const emailUtils = {
 		return text
 			.split('\n')
 			.map(line => {
-				return line.replace(/[\u200B-\u200F\uFEFF\u034F\u200B-\u200F\u00A0\u3000\u00AD]/g, '')
+				// Non-breaking/full-width spaces separate words; only strip invisible marks.
+				return line.replace(/[\u00A0\u3000]/g, ' ')
+					.replace(/[\u200B\u200E\u200F\uFEFF\u034F\u00AD]/g, '')
 					.replace(/\s+/g, ' ')
 					.trim();
 			})
 			.join('\n')
-			.replace(/\n{3,}/g, '\n')
+			.replace(/\n{3,}/g, '\n\n')
 			.trim();
 	},
 

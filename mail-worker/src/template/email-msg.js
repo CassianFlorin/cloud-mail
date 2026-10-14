@@ -1,64 +1,65 @@
 import emailUtils from '../utils/email-utils';
+import telegramPreview from '../utils/telegram-preview';
 
-const TELEGRAM_MESSAGE_LIMIT = 3500;
-const TRUNCATED_SUFFIX = '...';
-
-function escapeHtml(text = '') {
-	return text
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;');
-}
-
-function truncateText(text, maxLength) {
-	if (!text || text.length <= maxLength) {
-		return text || '';
-	}
-
-	if (maxLength <= TRUNCATED_SUFFIX.length) {
-		return TRUNCATED_SUFFIX.slice(0, maxLength);
-	}
-
-	return text.slice(0, maxLength - TRUNCATED_SUFFIX.length) + TRUNCATED_SUFFIX;
+function field(value, maxLength) {
+	const text = emailUtils.formatText(String(value || '')).replace(/\s+/g, ' ');
+	const characters = Array.from(text);
+	return characters.length > maxLength
+		? characters.slice(0, maxLength - 3).join('') + '...'
+		: text;
 }
 
 export default function emailMsgTemplate(email, tgMsgTo, tgMsgFrom, tgMsgText) {
+	const blocks = [{
+		type: 'heading',
+		size: 3,
+		text: field(email.subject, 180) || '（无主题）'
+	}];
 
-	let template = `<b>${escapeHtml(email.subject || '')}</b>`
-
-		if (tgMsgFrom === 'only-name') {
-			template += `
-
-From\u200B：${escapeHtml(email.name || '')}`
+	if (tgMsgFrom === 'show' || tgMsgFrom === 'only-name') {
+		const name = field(email.name, 100);
+		const address = field(email.sendEmail, 254);
+		const text = [{ type: 'bold', text: '发件人：' }];
+		if (name) text.push(name);
+		if (tgMsgFrom === 'show' && address) {
+			if (name) text.push(' ');
+			text.push({ type: 'code', text: address });
 		}
-
-		if (tgMsgFrom === 'show') {
-			template += `
-
-From\u200B：${escapeHtml(email.name || '')}  &lt;${escapeHtml(email.sendEmail || '')}&gt;`
-		}
-
-		if(tgMsgTo === 'show' && tgMsgFrom === 'hide') {
-			template += `
-
-To：\u200B${escapeHtml(email.toEmail || '')}`
-
-		} else if(tgMsgTo === 'show') {
-		template += `
-To：\u200B${escapeHtml(email.toEmail || '')}`
+		if (text.length === 1) text.push('（未知）');
+		blocks.push({ type: 'paragraph', text });
 	}
 
-	const text = escapeHtml(emailUtils.formatText(email.text) || emailUtils.htmlToText(email.content));
-
-	if(tgMsgText === 'show') {
-		const prefix = `${template}
-
-`;
-		const maxTextLength = Math.max(0, TELEGRAM_MESSAGE_LIMIT - prefix.length);
-		template += `
-
-${truncateText(text, maxTextLength)}`
+	if (tgMsgTo === 'show') {
+		blocks.push({
+			type: 'paragraph',
+			text: [
+				{ type: 'bold', text: '收件地址：' },
+				{ type: 'code', text: field(email.toEmail, 254) || '（未知）' }
+			]
+		});
 	}
 
-	return template;
+	if (tgMsgText === 'show') {
+		const preview = telegramPreview(email);
+		blocks.push({ type: 'divider' });
+		blocks.push({ type: 'paragraph', text: { type: 'bold', text: '正文预览' } });
+		if (preview.length > 250) {
+			blocks.push({ type: 'expandable_blockquote', text: preview.text });
+		} else {
+			blocks.push({
+				type: 'blockquote',
+				blocks: [{ type: 'paragraph', text: preview.text }]
+			});
+		}
+		blocks.push({
+			type: 'footer',
+			text: preview.truncated
+				? '正文已截取，点击下方按钮查看完整邮件。'
+				: '点击下方按钮查看完整邮件。'
+		});
+	}
 
+	// Native blocks keep untrusted email text separate from Telegram formatting.
+	// Schema: https://core.telegram.org/bots/api#inputrichmessage
+	return { blocks, skip_entity_detection: true };
 }
