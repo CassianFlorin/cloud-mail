@@ -3,6 +3,7 @@
 // CSS 转义、注释和 image-set 不能绕过这次清理。
 // 脚本、事件和可执行地址与追踪开关无关，阅读时一律去掉。
 // 本站 /attachments/ 资源不是第三方追踪器，阅读和引用时都要保留。
+// findings 记下这次实际去掉的内容，打开邮件时可以逐项查看。
 
 const TRACKING_PARAMS = new Set([
 	'mc_cid', 'mc_eid', 'mkt_tok', 'mkt_unsubscribe', 'vero_id', 'vero_conv',
@@ -41,82 +42,134 @@ export function protectEmailDocument(document, options = {}) {
 		keepRemote: options.keepRemote === true,
 		trustedOrigins: options.trustedOrigins || []
 	};
-	const stats = { blockedRemote: 0, strippedPixels: 0, rewrittenLinks: 0 };
+	const stats = { blockedRemote: 0, strippedPixels: 0, rewrittenLinks: 0, findings: [], omitted: 0 };
+	const seen = new Set();
+	const note = (kind, url, extra = {}) => {
+		const item = { kind };
+		const cleanUrl = clip(url, 300);
+		const from = clip(extra.from, 300);
+		const name = clip(extra.name, 40);
+		const target = clip(extra.target, 24);
+		const text = clip(extra.text, 120);
+		if (cleanUrl) item.url = cleanUrl;
+		if (from) item.from = from;
+		if (name) item.name = name;
+		if (target) item.target = target;
+		if (text) item.text = text;
+		const key = JSON.stringify(item);
+		if (seen.has(key)) return;
+		if (stats.findings.length >= 200) {
+			stats.omitted++;
+			return;
+		}
+		seen.add(key);
+		stats.findings.push(item);
+	};
 
-	removeActiveContent(document);
-	protectImages(document, stats, settings);
-	protectMedia(document, stats, settings);
-	protectExternalRefs(document, stats, settings);
-	protectBackgrounds(document, stats, settings);
-	protectStylesheets(document, stats, settings);
-	protectCss(document, stats, settings);
-	if (settings.rewriteLinks) rewriteLinks(document, stats);
+	removeActiveContent(document, note);
+	protectImages(document, stats, settings, note);
+	protectMedia(document, stats, settings, note);
+	protectExternalRefs(document, stats, settings, note);
+	protectBackgrounds(document, stats, settings, note);
+	protectStylesheets(document, stats, settings, note);
+	protectCss(document, stats, settings, note);
+	if (settings.rewriteLinks) rewriteLinks(document, stats, note);
 
 	return stats;
 }
 
-function removeActiveContent(document) {
-	for (const el of [...document.querySelectorAll('*')]) {
-		if (ACTIVE_TAGS.has(el.tagName.toLowerCase())) el.remove();
+function clip(value, max) {
+	const text = String(value || '').replace(/\s+/g, ' ').trim();
+	if (!text) return '';
+	if (text.length <= max) return text;
+	return text.slice(0, max - 1) + '…';
+}
+
+function removeActiveContent(document, note) {
+	stripActiveTree(document, note);
+	for (const template of [...document.querySelectorAll('template')]) {
+		const content = template.content;
+		if (!content || !content.querySelectorAll) continue;
+		stripActiveTree(content, note);
+	}
+}
+
+function stripActiveTree(root, note) {
+	for (const el of [...root.querySelectorAll('*')]) {
+		const tag = el.tagName.toLowerCase();
+		if (!ACTIVE_TAGS.has(tag)) continue;
+		const url = el.getAttribute('src') || el.getAttribute('href') || el.getAttribute('data') || '';
+		note('active', url, { name: tag, text: url ? '' : el.textContent });
+		// 外层去掉之后，里面的框架和事件也要记下来。
+		stripActiveAttributes(el, note);
+		el.remove();
 	}
 
-	for (const el of [...document.querySelectorAll('meta')]) {
+	for (const el of [...root.querySelectorAll('meta')]) {
 		const equiv = el.getAttribute('http-equiv');
 		const name = (el.getAttribute('name') || '').toLowerCase();
 		// http-equiv 可以刷新页面或改引用策略。charset 没有 http-equiv，留下来。
-		if (equiv || name === 'referrer') el.remove();
+		if (!(equiv || name === 'referrer')) continue;
+		note('active', el.getAttribute('content') || equiv || name, { name: 'meta' });
+		if (el.parentNode) el.remove();
 	}
 
-	for (const el of [...document.querySelectorAll('link')]) {
+	for (const el of [...root.querySelectorAll('link')]) {
 		const rel = (el.getAttribute('rel') || '').toLowerCase();
 		if (/\bstylesheet\b/.test(rel)) continue;
-		if (/\b(import|prefetch|preconnect|dns-prefetch|prerender|preload|modulepreload)\b/.test(rel)) el.remove();
+		const token = rel.match(/\b(import|prefetch|preconnect|dns-prefetch|prerender|preload|modulepreload)\b/);
+		if (!token) continue;
+		note('active', el.getAttribute('href') || '', { name: token[1] });
+		if (el.parentNode) el.remove();
 	}
 
 	// 表单会把页面里的字段提交到发件人的地址。留下里面的文字，去掉提交能力。
-	for (const form of [...document.querySelectorAll('form')]) {
+	for (const form of [...root.querySelectorAll('form')]) {
+		note('active', form.getAttribute('action') || '', { name: 'form' });
 		const parent = form.parentNode;
 		if (!parent) continue;
 		while (form.firstChild) parent.insertBefore(form.firstChild, form);
 		form.remove();
 	}
 
-	for (const el of [...document.querySelectorAll('*')]) stripActiveAttributes(el);
-	for (const template of [...document.querySelectorAll('template')]) {
-		const content = template.content;
-		if (!content || !content.querySelectorAll) continue;
-		for (const el of [...content.querySelectorAll('*')]) {
-			if (ACTIVE_TAGS.has(el.tagName.toLowerCase())) el.remove();
-		}
-		for (const el of [...content.querySelectorAll('*')]) stripActiveAttributes(el);
-	}
+	for (const el of [...root.querySelectorAll('*')]) stripActiveAttributes(el, note);
 
 	// <a rel="prefetch"> 会在阅读时就请求目标，不必等点击。
-	for (const el of [...document.querySelectorAll('[rel]')]) {
-		const kept = (el.getAttribute('rel') || '')
-			.split(/\s+/)
-			.filter(token => token && !/^(import|prefetch|preconnect|dns-prefetch|prerender|preload|modulepreload)$/i.test(token));
+	for (const el of [...root.querySelectorAll('[rel]')]) {
+		const original = el.getAttribute('rel') || '';
+		const removed = original.split(/\s+/).filter(token => /^(import|prefetch|preconnect|dns-prefetch|prerender|preload|modulepreload)$/i.test(token));
+		const kept = original.split(/\s+/).filter(token => token && !removed.includes(token) && !/^(import|prefetch|preconnect|dns-prefetch|prerender|preload|modulepreload)$/i.test(token));
 		const next = kept.join(' ');
-		if (next === (el.getAttribute('rel') || '')) continue;
+		if (next === original) continue;
+		if (removed.length) note('active', el.getAttribute('href') || '', { name: removed[0].toLowerCase() });
 		if (next) el.setAttribute('rel', next);
 		else el.removeAttribute('rel');
 	}
 }
 
-function stripActiveAttributes(el) {
+function stripActiveAttributes(el, note) {
+	const target = el.tagName.toLowerCase();
 	const remove = [];
 	for (let i = 0; i < el.attributes.length; i++) {
-		const name = el.attributes[i].name.toLowerCase();
+		const attr = el.attributes[i];
+		const name = attr.name.toLowerCase();
 		if ((name.length > 2 && name.slice(0, 2) === 'on') || name === 'srcdoc' || name === 'formaction') {
-			remove.push(el.attributes[i].name);
+			note('active', '', { name, target, text: attr.value });
+			remove.push(attr.name);
 		}
 	}
 	remove.forEach(name => el.removeAttribute(name));
-	if (el.hasAttribute('ping')) el.removeAttribute('ping');
+	if (el.hasAttribute('ping')) {
+		note('active', el.getAttribute('ping') || '', { name: 'ping', target });
+		el.removeAttribute('ping');
+	}
 
 	for (const name of URL_ATTRS) {
 		const value = el.getAttribute(name);
-		if (value && isDangerousUrl(value)) el.removeAttribute(name);
+		if (value && isDangerousUrl(value)) {
+			note('active', value, { name: 'url', target });
+			el.removeAttribute(name);
+		}
 	}
 }
 
@@ -127,7 +180,7 @@ function isDangerousUrl(value) {
 	return !/^data:image\/(?:png|gif|jpe?g|webp|bmp|x-icon|vnd\.microsoft\.icon)[;,]/i.test(text);
 }
 
-function protectImages(document, stats, settings) {
+function protectImages(document, stats, settings, note) {
 	for (const el of [...document.querySelectorAll('img, input, image')]) {
 		const tag = el.tagName.toLowerCase();
 		if (tag === 'input' && (el.getAttribute('type') || '').toLowerCase() !== 'image') continue;
@@ -137,39 +190,40 @@ function protectImages(document, stats, settings) {
 		if (src && isTrackingPixel(el, src, settings)) {
 			el.remove();
 			stats.strippedPixels++;
+			note('pixel', src);
 			continue;
 		}
 
-		if (srcName && blockAttribute(el, srcName, stats, settings) === 'removed') continue;
-		if (el.hasAttribute('srcset')) blockSrcset(el, stats, settings);
+		if (srcName && blockAttribute(el, srcName, stats, settings, note) === 'removed') continue;
+		if (el.hasAttribute('srcset')) blockSrcset(el, stats, settings, note);
 	}
 }
 
-function protectMedia(document, stats, settings) {
+function protectMedia(document, stats, settings, note) {
 	for (const el of [...document.querySelectorAll('video, audio, source')]) {
 		for (const name of ['src', 'poster', 'srcset']) {
 			if (!el.hasAttribute(name)) continue;
-			if (name === 'srcset') blockSrcset(el, stats, settings);
-			else blockAttribute(el, name, stats, settings);
+			if (name === 'srcset') blockSrcset(el, stats, settings, note);
+			else blockAttribute(el, name, stats, settings, note);
 		}
 	}
 }
 
-function protectExternalRefs(document, stats, settings) {
+function protectExternalRefs(document, stats, settings, note) {
 	for (const el of [...document.querySelectorAll('use, feImage')]) {
 		for (const name of ['href', 'xlink:href']) {
-			if (el.hasAttribute(name)) blockAttribute(el, name, stats, settings);
+			if (el.hasAttribute(name)) blockAttribute(el, name, stats, settings, note);
 		}
 	}
 }
 
-function protectBackgrounds(document, stats, settings) {
+function protectBackgrounds(document, stats, settings, note) {
 	for (const el of [...document.querySelectorAll('[background]')]) {
-		blockAttribute(el, 'background', stats, settings);
+		blockAttribute(el, 'background', stats, settings, note);
 	}
 }
 
-function protectStylesheets(document, stats, settings) {
+function protectStylesheets(document, stats, settings, note) {
 	for (const el of [...document.querySelectorAll('link')]) {
 		if (!/\bstylesheet\b/i.test(el.getAttribute('rel') || '')) continue;
 		const href = el.getAttribute('href');
@@ -178,23 +232,33 @@ function protectStylesheets(document, stats, settings) {
 		const kind = classifyUrl(href, { ...settings, blockRemote: true });
 		if (!kind) continue;
 		el.removeAttribute('href');
-		if (kind === 'pixel') stats.strippedPixels++;
+		if (kind === 'pixel') {
+			stats.strippedPixels++;
+			note('pixel', href);
+		} else {
+			note('stylesheet', href);
+		}
 	}
 }
 
-function protectCss(document, stats, settings) {
+function protectCss(document, stats, settings, note) {
 	for (const el of [...document.querySelectorAll('[style]')]) {
-		rewriteStyle(el, el.getAttribute('style') || '', stats, settings, 'inline');
+		rewriteStyle(el, el.getAttribute('style') || '', stats, settings, 'inline', note);
 	}
 	for (const el of [...document.querySelectorAll('style')]) {
-		rewriteStyle(el, el.textContent || '', stats, settings, 'css');
+		rewriteStyle(el, el.textContent || '', stats, settings, 'css', note);
 	}
 }
 
-function rewriteStyle(el, original, stats, settings, kind) {
+function rewriteStyle(el, original, stats, settings, kind, note) {
 	const source = neutralizeCssBreakout(original);
 	const always = classifyFor({ ...settings, blockRemote: true });
-	const result = rewriteCss(source, classifyFor(settings), always);
+	const result = rewriteCss(source, classifyFor(settings), always, (found, url) => {
+		if (found === 'expression') note('active', '', { name: 'expression' });
+		else if (found === 'behavior') note('active', '', { name: 'behavior', text: url });
+		else if (found === 'danger') note('active', url, { name: 'url' });
+		else note(found, url);
+	});
 	if (!result.changed && source === original) return;
 	if (settings.keepRemote) {
 		const restorable = rewriteCss(source, classifyFor({ ...settings, blockRemote: false }), always);
@@ -210,13 +274,14 @@ function rewriteStyle(el, original, stats, settings, kind) {
 	stats.strippedPixels += result.pixels;
 }
 
-function rewriteLinks(document, stats) {
+function rewriteLinks(document, stats, note) {
 	for (const el of [...document.querySelectorAll('a[href], area[href]')]) {
 		const href = el.getAttribute('href');
 		const cleaned = cleanHttpUrl(href);
 		if (cleaned !== href) {
 			el.setAttribute('href', cleaned);
 			stats.rewrittenLinks++;
+			note('link', cleaned, { from: href });
 		}
 		hardenLink(el);
 	}
@@ -228,7 +293,7 @@ function rewriteLinks(document, stats) {
 	}
 }
 
-function blockSrcset(el, stats, settings) {
+function blockSrcset(el, stats, settings, note) {
 	const original = el.getAttribute('srcset') || '';
 	const kept = [];
 	const restorable = [];
@@ -241,15 +306,18 @@ function blockSrcset(el, stats, settings) {
 		const url = candidate.split(/\s+/)[0];
 		if (isDangerousUrl(url)) {
 			dropped = true;
+			note('active', url, { name: 'url', target: el.tagName.toLowerCase() });
 			continue;
 		}
 		const kind = classifyUrl(url, settings);
 		if (kind === 'pixel') {
 			pixels++;
+			note('pixel', url);
 			continue;
 		}
 		if (kind === 'remote') {
 			remote++;
+			note('remote', url);
 			restorable.push(candidate);
 			continue;
 		}
@@ -268,7 +336,7 @@ function blockSrcset(el, stats, settings) {
 	stats.strippedPixels += pixels;
 }
 
-function blockAttribute(el, name, stats, settings) {
+function blockAttribute(el, name, stats, settings, note) {
 	const value = el.getAttribute(name);
 	if (!value) return 'kept';
 	const kind = classifyUrl(value, settings);
@@ -278,6 +346,7 @@ function blockAttribute(el, name, stats, settings) {
 	}
 
 	if (kind === 'pixel') {
+		note('pixel', value);
 		if (isImageTag(el) && (name === 'src' || name === 'href' || name === 'xlink:href')) {
 			el.remove();
 			stats.strippedPixels++;
@@ -288,6 +357,7 @@ function blockAttribute(el, name, stats, settings) {
 		return 'stripped';
 	}
 
+	note('remote', value);
 	if (settings.keepRemote) {
 		el.setAttribute(stashName(name), value);
 		if (isImageTag(el) && (name === 'src' || name === 'href' || name === 'xlink:href')) {
@@ -309,49 +379,60 @@ function blockAttribute(el, name, stats, settings) {
 	return 'blocked';
 }
 
-function rewriteCss(css, classifyImage, classifyAlways) {
+function rewriteCss(css, classifyImage, classifyAlways, report = () => {}) {
 	let remote = 0;
 	let pixels = 0;
-	const apply = (url, classify, countRemote) => {
+	const apply = (url, classify, countRemote, findingKind) => {
 		const decoded = decodeCssUrl(url);
-		if (isDangerousUrl(decoded)) return 'none';
+		if (isDangerousUrl(decoded)) {
+			report('danger', decoded);
+			return 'none';
+		}
 		const kind = classify(decoded);
 		if (kind === 'pixel') {
 			pixels++;
+			report('pixel', decoded);
 			return 'none';
 		}
 		if (kind === 'remote') {
 			if (countRemote) remote++;
+			report(findingKind, decoded);
 			return 'none';
 		}
 		return null;
 	};
-	const replaceUrl = (value, classify, countRemote) => value.replace(
+	const replaceUrl = (value, classify, countRemote, findingKind) => value.replace(
 		/url\(\s*(['"]?)([\s\S]*?)\1\s*\)/gi,
 		(match, quote, url) => {
-			const replacement = apply(url, classify, countRemote);
+			const replacement = apply(url, classify, countRemote, findingKind);
 			return replacement == null ? match : replacement;
 		}
 	);
 
 	let next = css.replace(/@import\s+(?:url\(\s*(['"]?)([\s\S]*?)\1\s*\)|(['"])([\s\S]*?)\3)\s*[^;]*;?/gi, (match, q1, u1, q2, u2) => {
-		const replacement = apply(u1 || u2 || '', classifyAlways, false);
+		const replacement = apply(u1 || u2 || '', classifyAlways, false, 'import');
 		return replacement == null ? match : '';
 	});
-	next = next.replace(/@font-face\s*\{[^}]*\}/gi, block => replaceUrl(block, classifyAlways, false));
+	next = next.replace(/@font-face\s*\{[^}]*\}/gi, block => replaceUrl(block, classifyAlways, false, 'font'));
 	next = next.replace(/(-webkit-)?image-set\(([^()]*)\)/gi, (match, prefix, body) => {
 		let hit = false;
 		const replaced = body.replace(/(['"])([\s\S]*?)\1/gi, (quoted, quote, url) => {
-			const replacement = apply(url, classifyImage, true);
+			const replacement = apply(url, classifyImage, true, 'remote');
 			if (replacement == null) return quoted;
 			hit = true;
 			return quote + quote;
 		});
 		return hit ? (prefix || '') + 'image-set(' + replaced + ')' : match;
 	});
-	next = replaceUrl(next, classifyImage, true);
-	next = next.replace(/expression\s*\((?:[^()]|\([^()]*\))*\)/gi, 'none');
-	next = next.replace(/(?:-moz-binding|behavior)\s*:[^;}]*/gi, '');
+	next = replaceUrl(next, classifyImage, true, 'remote');
+	next = next.replace(/expression\s*\((?:[^()]|\([^()]*\))*\)/gi, () => {
+		report('expression', 'expression()');
+		return 'none';
+	});
+	next = next.replace(/(?:-moz-binding|behavior)\s*:[^;}]*/gi, (match) => {
+		report('behavior', match.trim());
+		return '';
+	});
 	return { css: next, remote, pixels, changed: next !== css };
 }
 
