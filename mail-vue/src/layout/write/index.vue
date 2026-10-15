@@ -509,7 +509,7 @@ function formatImage(content) {
 
 function quoteHtml(email) {
   const formatted = formatImage(email.content);
-  if (!formatted || settingStore.blockTrackers === false) return formatted;
+  if (!formatted) return formatted;
   const doc = new DOMParser().parseFromString(formatted, 'text/html');
   const origins = [];
   const domain = toOssDomain(settingStore.settings.r2Domain);
@@ -521,8 +521,15 @@ function quoteHtml(email) {
     }
   }
   origins.push(window.location.origin);
+  const track = settingStore.blockTrackers !== false;
   // 引用进编辑器的远程图片会在写信时发出请求，等于替发件人确认已读。
-  protectEmailDocument(doc, { blockRemote: true, trustedOrigins: origins });
+  // 关掉追踪时仍去掉脚本，避免原信里的事件代码进到编辑器。
+  protectEmailDocument(doc, {
+    blockRemote: track,
+    stripPixels: track,
+    rewriteLinks: track,
+    trustedOrigins: origins,
+  });
   const styles = [...doc.head.querySelectorAll('style')].map(style => style.outerHTML).join('');
   return styles + (doc.body?.innerHTML || '');
 }

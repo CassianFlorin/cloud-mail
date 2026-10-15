@@ -201,20 +201,18 @@ watch(() => [email.value.emailId, email.value.content, settingStore.blockTracker
     }
   }));
   // 附件已换成会话内的 blob 地址，剩下的远程地址才会被当成追踪内容。
-  const protect = settingStore.blockTrackers !== false;
-  const blockRemote = protect && remoteAllowedId.value !== email.value.emailId;
-  if (protect) {
-    const stats = protectEmailDocument(document, {
-      blockRemote,
-      trustedOrigins: attachmentOrigins(),
-    });
-    if (revision === contentRevision) {
-      remoteBlocked.value = blockRemote ? stats.blockedRemote : 0;
-      strippedPixels.value = stats.strippedPixels;
-    }
-  } else if (revision === contentRevision) {
-    remoteBlocked.value = 0;
-    strippedPixels.value = 0;
+  // 脚本和事件代码与开关无关，关掉追踪时也要清掉。
+  const track = settingStore.blockTrackers !== false;
+  const blockRemote = track && remoteAllowedId.value !== email.value.emailId;
+  const stats = protectEmailDocument(document, {
+    blockRemote,
+    stripPixels: track,
+    rewriteLinks: track,
+    trustedOrigins: attachmentOrigins(),
+  });
+  if (revision === contentRevision) {
+    remoteBlocked.value = blockRemote ? stats.blockedRemote : 0;
+    strippedPixels.value = track ? stats.strippedPixels : 0;
   }
   // Keep the original body styles and head styles used by HTML email layouts.
   if (revision === contentRevision) privateContent.value = document.documentElement.outerHTML;
