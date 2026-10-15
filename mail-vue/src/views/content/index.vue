@@ -35,6 +35,11 @@
             <el-alert v-if="email.status === 4" :closable="false" :title="$t('complained')" class="email-msg" type="warning" show-icon />
             <el-alert v-if="email.status === 5" :closable="false" :title="$t('delayed')" class="email-msg" type="warning" show-icon />
           </div>
+          <el-alert v-if="remoteBlocked > 0" class="track-alert" type="info" :closable="false" show-icon
+                    :title="t('remoteBlocked', { count: remoteBlocked })">
+            <el-button link type="primary" @click="showRemoteImages">{{ t('showRemoteImages') }}</el-button>
+          </el-alert>
+          <p v-else-if="strippedPixels > 0" class="track-note">{{ t('pixelsRemoved', { count: strippedPixels }) }}</p>
           <el-scrollbar class="htm-scrollbar" :class="!email.attList?.length ? 'bottom-distance' : ''">
             <ShadowHtml class="shadow-html" :html="privateContent" v-if="email.content" />
             <pre v-else class="email-text" >{{email.text}}</pre>
@@ -114,6 +119,7 @@ import {useUiStore} from "@/store/ui.js";
 import {useI18n} from "vue-i18n";
 import {EmailUnreadEnum} from "@/enums/email-enum.js";
 import {fetchAttachmentBlob} from "@/utils/private-attachments.js";
+import {protectEmailDocument} from "@shared/anti-track.js";
 
 const uiStore = useUiStore();
 const settingStore = useSettingStore();
@@ -130,8 +136,29 @@ const email = computed(() => emailStore.contentData.email || {
 const showPreview = ref(false)
 const srcList = reactive([])
 const privateContent = ref('');
+const remoteBlocked = ref(0);
+const strippedPixels = ref(0);
+const remoteAllowedId = ref(null);
 const objectUrls = new Map();
 let contentRevision = 0;
+
+function showRemoteImages() {
+  remoteAllowedId.value = email.value.emailId;
+}
+
+function attachmentOrigins() {
+  const origins = [];
+  const domain = toOssDomain(settingStore.settings.r2Domain);
+  if (domain) {
+    try {
+      origins.push(new URL(domain).origin);
+    } catch {
+      // 配置了无法解析的访问域名时，只信任当前站点上的附件。
+    }
+  }
+  origins.push(window.location.origin);
+  return origins;
+}
 
 function releaseObjectUrls() {
   for (const url of objectUrls.values()) URL.revokeObjectURL(url);
@@ -150,7 +177,7 @@ async function attachmentUrl(key) {
 
 // Load stored inline images with the session header, then expose only local
 // blob URLs to the HTML renderer. Never insert bearer tokens into image URLs.
-watch(() => [email.value.emailId, email.value.content], async () => {
+watch(() => [email.value.emailId, email.value.content, settingStore.blockTrackers, remoteAllowedId.value], async () => {
   const revision = ++contentRevision;
   releaseObjectUrls();
   privateContent.value = '';
@@ -173,6 +200,22 @@ watch(() => [email.value.emailId, email.value.content], async () => {
       // Keep the email readable when one stored image is unavailable.
     }
   }));
+  // 附件已换成会话内的 blob 地址，剩下的远程地址才会被当成追踪内容。
+  const protect = settingStore.blockTrackers !== false;
+  const blockRemote = protect && remoteAllowedId.value !== email.value.emailId;
+  if (protect) {
+    const stats = protectEmailDocument(document, {
+      blockRemote,
+      trustedOrigins: attachmentOrigins(),
+    });
+    if (revision === contentRevision) {
+      remoteBlocked.value = blockRemote ? stats.blockedRemote : 0;
+      strippedPixels.value = stats.strippedPixels;
+    }
+  } else if (revision === contentRevision) {
+    remoteBlocked.value = 0;
+    strippedPixels.value = 0;
+  }
   // Keep the original body styles and head styles used by HTML email layouts.
   if (revision === contentRevision) privateContent.value = document.documentElement.outerHTML;
 }, { immediate: true });
@@ -604,6 +647,15 @@ const handleDelete = () => {
       }
     }
   }
+}
+
+.track-alert {
+  margin-bottom: 12px;
+}
+
+.track-note {
+  margin: 0 0 12px;
+  color: var(--regular-text-color);
 }
 
 .shadow-html::after  {

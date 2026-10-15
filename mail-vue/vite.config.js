@@ -13,6 +13,9 @@ export default defineConfig(({mode}) => {
             host: true,
             port: 3001,
             hmr: true,
+            fs: {
+                allow: [path.resolve(__dirname, '..')],
+            },
         },
         base: env.VITE_STATIC_URL || '/',
         plugins: [vue(),
@@ -48,7 +51,8 @@ export default defineConfig(({mode}) => {
         ],
         resolve: {
             alias: {
-                '@': path.resolve(__dirname, 'src')
+                '@': path.resolve(__dirname, 'src'),
+                '@shared': path.resolve(__dirname, '../shared')
             }
         },
         build: {

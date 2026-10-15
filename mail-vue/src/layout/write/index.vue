@@ -105,6 +105,7 @@ import {fileToBase64, formatBytes} from "@/utils/file-utils.js";
 import {getIconByName} from "@/utils/icon-utils.js";
 import sendPercent from "@/components/send-percent/index.vue"
 import {toOssDomain} from "@/utils/convert.js";
+import {protectEmailDocument} from "@shared/anti-track.js";
 import {formatDetailDate} from "@/utils/day.js";
 import {useSettingStore} from "@/store/setting.js";
 import {userDraftStore} from "@/store/draft.js";
@@ -445,7 +446,7 @@ function openForward(email) {
 
   setTimeout(() => {
     defValue.value = `
-      ${formatImage(email.content) || `<pre style="font-family: inherit;word-break: break-word;white-space: pre-wrap;margin: 0">${email.text}</pre>`}
+      ${quoteHtml(email) || `<pre style="font-family: inherit;word-break: break-word;white-space: pre-wrap;margin: 0">${email.text}</pre>`}
     `
     open()
 
@@ -485,7 +486,7 @@ function openReply(email) {
     </div>
     <blockquote class="mceNonEditable" style="margin: 0 0 0 0.8ex;border-left: 1px solid rgb(204,204,204);padding-left: 1ex;">
       <articl>
-          ${formatImage(email.content) || `<pre style="font-family: inherit;word-break: break-word;white-space: pre-wrap;margin: 0">${email.text}</pre>`}
+          ${quoteHtml(email) || `<pre style="font-family: inherit;word-break: break-word;white-space: pre-wrap;margin: 0">${email.text}</pre>`}
       </article>
     </blockquote>`
     open()
@@ -504,6 +505,26 @@ function formatImage(content) {
   content = content || '';
   const domain = settingStore.settings.r2Domain;
   return content.replace(/{{domain}}/g, toOssDomain(domain) + '/');
+}
+
+function quoteHtml(email) {
+  const formatted = formatImage(email.content);
+  if (!formatted || settingStore.blockTrackers === false) return formatted;
+  const doc = new DOMParser().parseFromString(formatted, 'text/html');
+  const origins = [];
+  const domain = toOssDomain(settingStore.settings.r2Domain);
+  if (domain) {
+    try {
+      origins.push(new URL(domain).origin);
+    } catch {
+      // 无法解析的附件域名不加入信任列表。
+    }
+  }
+  origins.push(window.location.origin);
+  // 引用进编辑器的远程图片会在写信时发出请求，等于替发件人确认已读。
+  protectEmailDocument(doc, { blockRemote: true, trustedOrigins: origins });
+  const styles = [...doc.head.querySelectorAll('style')].map(style => style.outerHTML).join('');
+  return styles + (doc.body?.innerHTML || '');
 }
 
 function open() {

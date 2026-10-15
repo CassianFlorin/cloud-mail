@@ -3,6 +3,7 @@
 	"version": "0.0.0",
 	"private": true,
 	"scripts": {
+		"test:anti-track": "node --test test/anti-track.spec.mjs",
 		"test:claim": "node test/run-mail-claim.mjs",
 		"test:storage": "node test/run-storage.mjs",
 		"test:telegram": "node test/run-telegram.mjs",
