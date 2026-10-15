@@ -37,9 +37,15 @@
           </div>
           <el-alert v-if="remoteBlocked > 0" class="track-alert" type="info" :closable="false" show-icon
                     :title="t('remoteBlocked', { count: remoteBlocked })">
-            <el-button link type="primary" @click="showRemoteImages">{{ t('showRemoteImages') }}</el-button>
+            <div class="track-actions">
+              <el-button link type="primary" @click="showRemoteImages">{{ t('showRemoteImages') }}</el-button>
+              <el-button link type="primary" @click="openIntercept">{{ t('interceptView') }}</el-button>
+            </div>
           </el-alert>
-          <p v-else-if="strippedPixels > 0" class="track-note">{{ t('pixelsRemoved', { count: strippedPixels }) }}</p>
+          <p v-else-if="email.content && interceptReady" class="track-note">
+            <span>{{ findings.length ? t('interceptSummary', { count: findings.length }) : t('interceptNone') }}</span>
+            <el-button v-if="findings.length" link type="primary" @click="openIntercept">{{ t('interceptView') }}</el-button>
+          </p>
           <el-scrollbar class="htm-scrollbar" :class="!email.attList?.length ? 'bottom-distance' : ''">
             <ShadowHtml class="shadow-html" :html="privateContent" v-if="email.content" />
             <pre v-else class="email-text" >{{email.text}}</pre>
@@ -77,6 +83,24 @@
         show-progress
         @close="showPreview = false"
     />
+    <el-dialog v-model="interceptVisible" :title="interceptTitle" width="min(560px, 92vw)">
+      <p v-if="!findings.length" class="intercept-empty">{{ t('interceptNone') }}</p>
+      <div v-else class="intercept-list">
+        <p class="intercept-lead">{{ t('interceptLead') }}</p>
+        <section v-for="group in interceptGroups" :key="group.kind">
+          <h4>{{ group.label }}</h4>
+          <ul>
+            <li v-for="(item, index) in group.items" :key="group.kind + index">
+              <div v-if="interceptItemTitle(item)" class="intercept-name">{{ interceptItemTitle(item) }}</div>
+              <div v-if="item.kind === 'link'" class="intercept-url">{{ t('interceptLinkTo') }} {{ item.url }}</div>
+              <div v-else-if="item.url" class="intercept-url">{{ item.url }}</div>
+              <div v-if="item.text" class="intercept-text">{{ item.text }}</div>
+            </li>
+          </ul>
+        </section>
+        <p v-if="interceptOmitted" class="intercept-more">{{ t('interceptMore', { count: interceptOmitted }) }}</p>
+      </div>
+    </el-dialog>
     <el-dialog v-model="claimVisible" :title="t('claimMail')" width="min(420px, 92vw)"
                :close-on-click-modal="!claimSaving" :close-on-press-escape="!claimSaving"
                :show-close="!claimSaving" :before-close="closeClaim">
@@ -137,8 +161,14 @@ const showPreview = ref(false)
 const srcList = reactive([])
 const privateContent = ref('');
 const remoteBlocked = ref(0);
-const strippedPixels = ref(0);
+const findings = ref([]);
+const interceptOmitted = ref(0);
+const interceptReady = ref(false);
+const interceptVisible = ref(false);
 const remoteAllowedId = ref(null);
+let interceptEmailId = 0;
+let interceptTrack = true;
+let interceptContent = '';
 const objectUrls = new Map();
 let contentRevision = 0;
 
@@ -179,6 +209,16 @@ async function attachmentUrl(key) {
 // blob URLs to the HTML renderer. Never insert bearer tokens into image URLs.
 watch(() => [email.value.emailId, email.value.content, settingStore.blockTrackers, remoteAllowedId.value], async () => {
   const revision = ++contentRevision;
+  const content = email.value.content || '';
+  const track = settingStore.blockTrackers !== false;
+  const reportChanged = interceptEmailId !== email.value.emailId || interceptTrack !== track || interceptContent !== content;
+  if (reportChanged) {
+    if (interceptEmailId !== email.value.emailId) interceptVisible.value = false;
+    findings.value = [];
+    interceptOmitted.value = 0;
+    remoteBlocked.value = 0;
+    interceptReady.value = false;
+  }
   releaseObjectUrls();
   privateContent.value = '';
   const document = new DOMParser().parseFromString(formatImage(email.value.content), 'text/html');
@@ -202,7 +242,6 @@ watch(() => [email.value.emailId, email.value.content, settingStore.blockTracker
   }));
   // 附件已换成会话内的 blob 地址，剩下的远程地址才会被当成追踪内容。
   // 脚本和事件代码与开关无关，关掉追踪时也要清掉。
-  const track = settingStore.blockTrackers !== false;
   const blockRemote = track && remoteAllowedId.value !== email.value.emailId;
   const stats = protectEmailDocument(document, {
     blockRemote,
@@ -212,13 +251,60 @@ watch(() => [email.value.emailId, email.value.content, settingStore.blockTracker
   });
   if (revision === contentRevision) {
     remoteBlocked.value = blockRemote ? stats.blockedRemote : 0;
-    strippedPixels.value = track ? stats.strippedPixels : 0;
+    // 仍然显示会再跑一遍清理。拦截清单保留打开这封邮件时的结果。
+    if (reportChanged) {
+      interceptEmailId = email.value.emailId;
+      interceptTrack = track;
+      interceptContent = content;
+      findings.value = stats.findings;
+      interceptOmitted.value = stats.omitted;
+      interceptReady.value = true;
+    }
   }
   // Keep the original body styles and head styles used by HTML email layouts.
   if (revision === contentRevision) privateContent.value = document.documentElement.outerHTML;
 }, { immediate: true });
 
-const { t } = useI18n()
+const { t, te } = useI18n()
+const INTERCEPT_ORDER = ['active', 'pixel', 'stylesheet', 'import', 'font', 'remote', 'link'];
+
+const interceptGroups = computed(() => {
+  const buckets = new Map();
+  for (const item of findings.value) {
+    if (!buckets.has(item.kind)) buckets.set(item.kind, []);
+    buckets.get(item.kind).push(item);
+  }
+  const kinds = [
+    ...INTERCEPT_ORDER.filter(kind => buckets.has(kind)),
+    ...[...buckets.keys()].filter(kind => !INTERCEPT_ORDER.includes(kind)),
+  ];
+  return kinds.map(kind => ({
+    kind,
+    label: te('interceptGroups.' + kind) ? t('interceptGroups.' + kind) : kind,
+    items: buckets.get(kind),
+  }));
+});
+
+const interceptTitle = computed(() => findings.value.length
+  ? t('interceptTitleCount', { count: findings.value.length })
+  : t('interceptTitle'));
+
+function interceptNameKey(name) {
+  return String(name || '').replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+}
+
+function interceptItemTitle(item) {
+  if (item.kind === 'link') return item.from || '';
+  if (item.kind !== 'active') return '';
+  if (item.target && item.name) return t('interceptHandler', { target: item.target, name: item.name });
+  const key = interceptNameKey(item.name);
+  if (key && te('interceptNames.' + key)) return t('interceptNames.' + key);
+  return item.name || '';
+}
+
+function openIntercept() {
+  interceptVisible.value = true;
+}
 const userStore = useUserStore();
 // The backend also checks the administrator identity; this only controls visibility.
 const canClaim = computed(() => userStore.user.permKeys?.includes('*')
@@ -334,7 +420,7 @@ onUnmounted(() => {
 function handleKeyDown(event) {
   if (event.key !== 'Escape') return;
   if (showPreview.value) return;
-  if (claimVisible.value) return;
+  if (claimVisible.value || interceptVisible.value) return;
   if (document.querySelector('.el-message-box')) return;
   const writeBox = document.querySelector('.write-box');
   if (writeBox && writeBox.offsetParent !== null) return;
@@ -651,9 +737,54 @@ const handleDelete = () => {
   margin-bottom: 12px;
 }
 
+.track-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .track-note {
   margin: 0 0 12px;
   color: var(--regular-text-color);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.intercept-lead,
+.intercept-empty,
+.intercept-more {
+  margin: 0 0 12px;
+}
+
+.intercept-list {
+  max-height: 60vh;
+  overflow: auto;
+
+  section + section {
+    margin-top: 14px;
+  }
+
+  h4 {
+    margin: 0 0 6px;
+    font-size: 13px;
+  }
+
+  ul {
+    margin: 0;
+    padding-left: 18px;
+  }
+
+  li {
+    margin-bottom: 8px;
+    overflow-wrap: anywhere;
+  }
+
+  .intercept-url,
+  .intercept-text {
+    color: var(--regular-text-color);
+  }
 }
 
 .shadow-html::after  {
