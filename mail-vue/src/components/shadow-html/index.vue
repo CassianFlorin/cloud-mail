@@ -18,13 +18,18 @@ const container = ref(null)
 const contentBox = ref(null)
 let shadowRoot = null
 
+function readBodyStyle(html) {
+  const tag = html.match(/<body[^>]*>/i);
+  if (!tag) return '';
+  // data-cm-inline 保存被拦下的原始样式，不能把它当成 body 的 style。
+  const style = tag[0].match(/(?:^|\s)style\s*=\s*"([^"]*)"/i);
+  return style ? style[1] : '';
+}
+
 function updateContent() {
   if (!shadowRoot) return;
 
-  // 1. 提取 <body> 的 style 属性（如果存在）
-  const bodyStyleRegex = /<body[^>]*style="([^"]*)"[^>]*>/i;
-  const bodyStyleMatch = props.html.match(bodyStyleRegex);
-  const bodyStyle = bodyStyleMatch ? bodyStyleMatch[1] : '';
+  const bodyStyle = readBodyStyle(props.html);
 
   // 2. 移除 <body> 标签（保留内容）
   const cleanedHtml = props.html.replace(/<\/?body[^>]*>/gi, '');
@@ -63,7 +68,6 @@ function updateContent() {
         width: fit-content;
         height: fit-content;
         min-width: 100%;
-        ${bodyStyle ? bodyStyle : ''} /* 注入 body 的 style */
       }
 
       img:not(table img) {
@@ -76,6 +80,9 @@ function updateContent() {
       ${cleanedHtml}
     </div>
   `;
+  // 用 cssText 套用 body 样式，避免样式文本把 </style> 和追踪图片写进页面。
+  const styled = shadowRoot.querySelector('.shadow-content');
+  if (styled && bodyStyle) styled.style.cssText = bodyStyle;
 }
 
 function autoScale() {

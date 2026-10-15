@@ -42,6 +42,16 @@
         <el-option label="English" value="en" @pointerdown.prevent.stop="changeLang('en')"/>
       </el-select>
     </div>
+    <div class="privacy">
+      <div class="title">{{$t('privacy')}}</div>
+      <div class="privacy-row">
+        <div>
+          <div class="privacy-name">{{$t('blockTrackers')}}</div>
+          <div class="privacy-desc">{{$t('blockTrackersDesc')}}</div>
+        </div>
+        <el-switch v-model="settingStore.blockTrackers" />
+      </div>
+    </div>
     <div class="del-email" v-perm="'my:delete'">
       <div class="title">{{$t('deleteUser')}}</div>
       <div style="color: var(--regular-text-color);">
@@ -285,6 +295,32 @@ function submitPwd() {
 
     .language-select {
       width: 100px;
+    }
+  }
+
+  .privacy {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    margin-bottom: 40px;
+    font-size: 14px;
+
+    .privacy-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .privacy-name {
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+
+    .privacy-desc {
+      color: var(--regular-text-color);
+      max-width: 640px;
+      white-space: normal;
     }
   }
 
