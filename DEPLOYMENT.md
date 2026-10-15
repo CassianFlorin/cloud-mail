@@ -11,6 +11,8 @@ The structured Telegram notifications were deployed on 2026-10-14 as Worker
 version `3f6734c3-b1ee-4c6a-889e-b5d3f0b8acf3`.
 The forwarded-email preview cleanup was deployed on 2026-10-14 as Worker
 version `bc2b88d0-f901-4a61-9e1e-3ddd5cdf18c4`.
+The mail intercept report was deployed on 2026-10-15 as Worker version
+`15d59873-ab4c-4272-8419-63662c63adc8`.
 
 ## Endpoints
 
@@ -172,6 +174,22 @@ This cleanup applies to future notifications; existing Telegram messages
 are not rewritten. No real email or Telegram message was sent by the agent for
 this release. The owner subsequently forwarded an external email and confirmed
 the cleaned preview with a Telegram screenshot.
+
+## Mail intercept report (2026-10-15)
+
+Opening an HTML message lists what that message had removed: scripts and
+active content, tracking pixels, remote stylesheets, imported styles, web
+fonts, remote images, and rewritten tracking links. Choosing to show pictures
+loads ordinary remote images and keeps the list from the moment the message
+was opened. The Telegram full-email page shows the same list. Plain-text
+messages have no list.
+
+The anti-track suite passed 12 tests. The 10 mail-claim tests, 10 storage
+tests, and 21 Telegram notification tests also passed. The frontend production
+build passed. Deployment `15d59873-ab4c-4272-8419-63662c63adc8` serves
+https://mail.florin-studio.com. The website returned HTTP 200 and referenced
+`/assets/index-WEQaCGgp.js`, which contains the intercept report. An anonymous
+attachment request returned HTTP 401. No database migration was applied.
 
 ## Verification
 
