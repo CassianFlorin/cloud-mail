@@ -7,7 +7,7 @@ const en = {
     claimSuccess: 'Message assigned. Check the target mailbox inbox.',
     privacy: 'Privacy',
     blockTrackers: 'Block email tracking',
-    blockTrackersDesc: 'Remote images and styles stay unloaded when you read a message, and tracking parameters and common click wrappers are removed from links, so the sender cannot confirm that you opened it. Tracking pixels, remote stylesheets, and web fonts stay unloaded even if you choose to show pictures. Quoted content in replies and forwards leaves those remote resources out too.',
+    blockTrackersDesc: 'Remote images and styles stay unloaded when you read a message, and tracking parameters and common click wrappers are removed from links, so the sender cannot confirm that you opened it. Tracking pixels, remote stylesheets, and web fonts stay unloaded even if you choose to show pictures. Quoted content in replies and forwards leaves those remote resources out too. Scripts, embedded frames, and event handlers are removed whether or not this switch is on.',
     remoteBlocked: 'Blocked {count} remote items so the sender cannot tell that you opened this message',
     showRemoteImages: 'Show anyway',
     pixelsRemoved: 'Removed {count} tracking pixels',

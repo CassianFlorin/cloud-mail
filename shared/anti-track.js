@@ -1,6 +1,7 @@
 // 发件人用远程图片、样式和包装过的链接确认邮件已被打开或点击。
 // 追踪像素、远程样式表和字体在读者选择“仍然显示”之后也保持移除。
 // CSS 转义、注释和 image-set 不能绕过这次清理。
+// 脚本、事件和可执行地址与追踪开关无关，阅读时一律去掉。
 // 本站 /attachments/ 资源不是第三方追踪器，阅读和引用时都要保留。
 
 const TRACKING_PARAMS = new Set([
@@ -26,6 +27,12 @@ const PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAAL
 
 const URL_ATTRS = ['href', 'src', 'action', 'formaction', 'xlink:href', 'poster', 'background'];
 
+const ACTIVE_TAGS = new Set([
+	'script', 'iframe', 'object', 'embed', 'applet', 'frame', 'frameset', 'base',
+	'portal', 'fencedframe', 'foreignobject', 'annotation-xml', 'noscript',
+	'animate', 'animatetransform', 'animatemotion', 'set', 'discard', 'handler'
+]);
+
 export function protectEmailDocument(document, options = {}) {
 	const settings = {
 		blockRemote: options.blockRemote !== false,
@@ -49,48 +56,75 @@ export function protectEmailDocument(document, options = {}) {
 }
 
 function removeActiveContent(document) {
-	for (const el of [...document.querySelectorAll('script, iframe, object, embed, applet, frame, frameset, base')]) {
-		el.remove();
+	for (const el of [...document.querySelectorAll('*')]) {
+		if (ACTIVE_TAGS.has(el.tagName.toLowerCase())) el.remove();
 	}
 
 	for (const el of [...document.querySelectorAll('meta')]) {
-		if ((el.getAttribute('http-equiv') || '').toLowerCase() === 'refresh') el.remove();
+		const equiv = el.getAttribute('http-equiv');
+		const name = (el.getAttribute('name') || '').toLowerCase();
+		// http-equiv 可以刷新页面或改引用策略。charset 没有 http-equiv，留下来。
+		if (equiv || name === 'referrer') el.remove();
 	}
 
 	for (const el of [...document.querySelectorAll('link')]) {
 		const rel = (el.getAttribute('rel') || '').toLowerCase();
 		if (/\bstylesheet\b/.test(rel)) continue;
-		if (/\b(prefetch|preconnect|dns-prefetch|prerender|preload|modulepreload)\b/.test(rel)) el.remove();
+		if (/\b(import|prefetch|preconnect|dns-prefetch|prerender|preload|modulepreload)\b/.test(rel)) el.remove();
 	}
 
-	for (const el of [...document.querySelectorAll('*')]) {
-		const handlers = [];
-		for (let i = 0; i < el.attributes.length; i++) {
-			const name = el.attributes[i].name;
-			if (name.length > 2 && name.slice(0, 2).toLowerCase() === 'on') handlers.push(name);
-		}
-		handlers.forEach(name => el.removeAttribute(name));
-		if (el.hasAttribute('ping')) el.removeAttribute('ping');
+	// 表单会把页面里的字段提交到发件人的地址。留下里面的文字，去掉提交能力。
+	for (const form of [...document.querySelectorAll('form')]) {
+		const parent = form.parentNode;
+		if (!parent) continue;
+		while (form.firstChild) parent.insertBefore(form.firstChild, form);
+		form.remove();
+	}
 
-		for (const name of URL_ATTRS) {
-			const value = el.getAttribute(name);
-			if (!value) continue;
-			if (/^\s*(javascript|vbscript):/i.test(value) || /^\s*data:text\/html/i.test(value)) {
-				el.removeAttribute(name);
-			}
+	for (const el of [...document.querySelectorAll('*')]) stripActiveAttributes(el);
+	for (const template of [...document.querySelectorAll('template')]) {
+		const content = template.content;
+		if (!content || !content.querySelectorAll) continue;
+		for (const el of [...content.querySelectorAll('*')]) {
+			if (ACTIVE_TAGS.has(el.tagName.toLowerCase())) el.remove();
 		}
+		for (const el of [...content.querySelectorAll('*')]) stripActiveAttributes(el);
 	}
 
 	// <a rel="prefetch"> 会在阅读时就请求目标，不必等点击。
 	for (const el of [...document.querySelectorAll('[rel]')]) {
 		const kept = (el.getAttribute('rel') || '')
 			.split(/\s+/)
-			.filter(token => token && !/^(prefetch|preconnect|dns-prefetch|prerender|preload|modulepreload)$/i.test(token));
+			.filter(token => token && !/^(import|prefetch|preconnect|dns-prefetch|prerender|preload|modulepreload)$/i.test(token));
 		const next = kept.join(' ');
 		if (next === (el.getAttribute('rel') || '')) continue;
 		if (next) el.setAttribute('rel', next);
 		else el.removeAttribute('rel');
 	}
+}
+
+function stripActiveAttributes(el) {
+	const remove = [];
+	for (let i = 0; i < el.attributes.length; i++) {
+		const name = el.attributes[i].name.toLowerCase();
+		if ((name.length > 2 && name.slice(0, 2) === 'on') || name === 'srcdoc' || name === 'formaction') {
+			remove.push(el.attributes[i].name);
+		}
+	}
+	remove.forEach(name => el.removeAttribute(name));
+	if (el.hasAttribute('ping')) el.removeAttribute('ping');
+
+	for (const name of URL_ATTRS) {
+		const value = el.getAttribute(name);
+		if (value && isDangerousUrl(value)) el.removeAttribute(name);
+	}
+}
+
+function isDangerousUrl(value) {
+	const text = String(value || '').replace(/[\u0000-\u0020]/g, '');
+	if (/^(javascript|vbscript|livescript|mocha):/i.test(text)) return true;
+	if (!/^data:/i.test(text)) return false;
+	return !/^data:image\/(?:png|gif|jpe?g|webp|bmp|x-icon|vnd\.microsoft\.icon)[;,]/i.test(text);
 }
 
 function protectImages(document, stats, settings) {
@@ -200,10 +234,15 @@ function blockSrcset(el, stats, settings) {
 	const restorable = [];
 	let remote = 0;
 	let pixels = 0;
+	let dropped = false;
 	for (const part of original.split(',')) {
 		const candidate = part.trim();
 		if (!candidate) continue;
 		const url = candidate.split(/\s+/)[0];
+		if (isDangerousUrl(url)) {
+			dropped = true;
+			continue;
+		}
 		const kind = classifyUrl(url, settings);
 		if (kind === 'pixel') {
 			pixels++;
@@ -217,7 +256,7 @@ function blockSrcset(el, stats, settings) {
 		kept.push(candidate);
 		restorable.push(candidate);
 	}
-	if (!remote && !pixels) return;
+	if (!remote && !pixels && !dropped) return;
 	const saved = restorable.join(', ');
 	if (settings.keepRemote && saved && saved !== kept.join(', ')) {
 		el.setAttribute('data-cm-srcset', saved);
@@ -274,7 +313,9 @@ function rewriteCss(css, classifyImage, classifyAlways) {
 	let remote = 0;
 	let pixels = 0;
 	const apply = (url, classify, countRemote) => {
-		const kind = classify(decodeCssUrl(url));
+		const decoded = decodeCssUrl(url);
+		if (isDangerousUrl(decoded)) return 'none';
+		const kind = classify(decoded);
 		if (kind === 'pixel') {
 			pixels++;
 			return 'none';
@@ -309,6 +350,8 @@ function rewriteCss(css, classifyImage, classifyAlways) {
 		return hit ? (prefix || '') + 'image-set(' + replaced + ')' : match;
 	});
 	next = replaceUrl(next, classifyImage, true);
+	next = next.replace(/expression\s*\((?:[^()]|\([^()]*\))*\)/gi, 'none');
+	next = next.replace(/(?:-moz-binding|behavior)\s*:[^;}]*/gi, '');
 	return { css: next, remote, pixels, changed: next !== css };
 }
 
