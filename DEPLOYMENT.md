@@ -13,6 +13,8 @@ The forwarded-email preview cleanup was deployed on 2026-10-14 as Worker
 version `bc2b88d0-f901-4a61-9e1e-3ddd5cdf18c4`.
 The mail intercept report was deployed on 2026-10-15 as Worker version
 `15d59873-ab4c-4272-8419-63662c63adc8`.
+The mail privacy isolation was deployed on 2026-10-16 as Worker version
+`6dfa4561-4dd7-4fe0-91b5-6dae465e6a03`.
 
 ## Endpoints
 
@@ -190,6 +192,28 @@ build passed. Deployment `15d59873-ab4c-4272-8419-63662c63adc8` serves
 https://mail.florin-studio.com. The website returned HTTP 200 and referenced
 `/assets/index-WEQaCGgp.js`, which contains the intercept report. An anonymous
 attachment request returned HTTP 401. No database migration was applied.
+
+## Mail privacy isolation (2026-10-16)
+
+HTML mail is shown in a sandboxed frame that cannot run scripts, so message
+markup cannot read the login token. Showing ordinary remote pictures fetches
+them through the authenticated server. The reader's network address is not
+sent to the sender, though the sender may still learn that a picture was
+fetched. Tracking pixels, remote styles, web fonts, opaque tracker links, and
+executable markup stay removed. Known tracker links whose destination is not
+visible cannot be clicked. HTML, SVG, and XML attachments are sanitized on
+download; stored objects are unchanged. The Telegram full-email page uses the
+same sandbox and does not load remote images. In-app replies continue to use
+the stored sender address.
+
+The anti-track and privacy suites passed 15 tests. The 10 mail-claim tests,
+10 storage tests, and 21 Telegram notification tests also passed. The frontend
+production build passed. Deployment `6dfa4561-4dd7-4fe0-91b5-6dae465e6a03`
+serves https://mail.florin-studio.com. The website returned HTTP 200 and,
+after cache revalidation, referenced `/assets/index-DtD_tdOG.js`, which
+contains the disabled-tracker label. An anonymous attachment request and an
+anonymous remote-image request both returned HTTP 401. No database migration
+was applied.
 
 ## Verification
 
