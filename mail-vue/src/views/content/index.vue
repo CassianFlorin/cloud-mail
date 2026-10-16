@@ -41,6 +41,7 @@
               <el-button link type="primary" @click="showRemoteImages">{{ t('showRemoteImages') }}</el-button>
               <el-button link type="primary" @click="openIntercept">{{ t('interceptView') }}</el-button>
             </div>
+            <p class="track-hint">{{ t('remoteProxyHint') }}</p>
           </el-alert>
           <p v-else-if="email.content && interceptReady" class="track-note">
             <span>{{ findings.length ? t('interceptSummary', { count: findings.length }) : t('interceptNone') }}</span>
@@ -143,7 +144,8 @@ import {useUiStore} from "@/store/ui.js";
 import {useI18n} from "vue-i18n";
 import {EmailUnreadEnum} from "@/enums/email-enum.js";
 import {fetchAttachmentBlob} from "@/utils/private-attachments.js";
-import {protectEmailDocument} from "@shared/anti-track.js";
+import {protectEmailDocument, isRemoteUrl} from "@shared/anti-track.js";
+import {fetchRemoteImage} from "@/utils/remote-image.js";
 
 const uiStore = useUiStore();
 const settingStore = useSettingStore();
@@ -174,6 +176,87 @@ let contentRevision = 0;
 
 function showRemoteImages() {
   remoteAllowedId.value = email.value.emailId;
+}
+
+function revokeProxied(key) {
+  const url = objectUrls.get(key);
+  if (url) URL.revokeObjectURL(url);
+  objectUrls.delete(key);
+}
+
+async function proxyRemoteMedia(document, revision) {
+  const created = [];
+  const urls = new Set();
+  const remember = (value) => {
+    const url = String(value || '').trim();
+    if (isRemoteUrl(url) && /^https?:\/\//i.test(url)) urls.add(url);
+  };
+  for (const el of document.querySelectorAll('img, image, video, audio, source, input')) {
+    for (const name of ['src', 'poster', 'href']) remember(el.getAttribute(name));
+    const srcset = el.getAttribute('srcset');
+    if (srcset) srcset.split(',').forEach(part => remember(part.trim().split(/\s+/)[0]));
+  }
+  for (const el of document.querySelectorAll('[style], style')) {
+    const text = el.tagName.toLowerCase() === 'style' ? el.textContent : el.getAttribute('style');
+    for (const match of String(text || '').match(/https?:\/\/[^)'"\s]+/gi) || []) remember(match);
+  }
+  const allowed = new Set([...urls].slice(0, 40));
+  const blobs = new Map();
+  await Promise.all([...allowed].map(async (url) => {
+    try {
+      const blob = await fetchRemoteImage(url);
+      // 切换邮件后不能把上一封的地址写进当前列表，否则会清掉正在看的图片。
+      if (revision !== contentRevision) return;
+      const objectUrl = URL.createObjectURL(blob);
+      const key = 'remote:' + url;
+      objectUrls.set(key, objectUrl);
+      created.push(key);
+      blobs.set(url, objectUrl);
+    } catch {
+      blobs.set(url, '');
+    }
+  }));
+  if (revision !== contentRevision) {
+    created.forEach(revokeProxied);
+    return [];
+  }
+  const swap = (url) => {
+    if (!isRemoteUrl(url) || !/^https?:\/\//i.test(String(url || '').trim())) return url;
+    return blobs.get(String(url).trim()) || '';
+  };
+  for (const el of document.querySelectorAll('img, image, video, audio, source, input')) {
+    for (const name of ['src', 'poster', 'href']) {
+      if (!el.hasAttribute(name)) continue;
+      const next = swap(el.getAttribute(name));
+      if (next === el.getAttribute(name)) continue;
+      if (next) el.setAttribute(name, next);
+      else el.removeAttribute(name);
+    }
+    if (el.hasAttribute('srcset')) {
+      const next = el.getAttribute('srcset').split(',').map(part => {
+        const bits = part.trim().split(/\s+/);
+        const mapped = swap(bits[0]);
+        if (!mapped) return '';
+        bits[0] = mapped;
+        return bits.join(' ');
+      }).filter(Boolean).join(', ');
+      if (next) el.setAttribute('srcset', next);
+      else el.removeAttribute('srcset');
+    }
+  }
+  for (const el of document.querySelectorAll('[style], style')) {
+    const styleTag = el.tagName.toLowerCase() === 'style';
+    const text = styleTag ? el.textContent : el.getAttribute('style');
+    const next = String(text || '').replace(/url\(\s*(['"]?)(https?:\/\/[^)'"]+)\1\s*\)/gi, (match, quote, url) => {
+      const mapped = swap(url);
+      return mapped ? `url("${mapped}")` : 'none';
+    });
+    if (next === text) continue;
+    if (styleTag) el.textContent = next;
+    else if (next.trim()) el.setAttribute('style', next);
+    else el.removeAttribute('style');
+  }
+  return created;
 }
 
 function attachmentOrigins() {
@@ -241,14 +324,19 @@ watch(() => [email.value.emailId, email.value.content, settingStore.blockTracker
     }
   }));
   // 附件已换成会话内的 blob 地址，剩下的远程地址才会被当成追踪内容。
-  // 脚本和事件代码与开关无关，关掉追踪时也要清掉。
+  // 像素、追踪链接和脚本与开关无关。开关只决定要不要显示普通远程图片。
   const blockRemote = track && remoteAllowedId.value !== email.value.emailId;
   const stats = protectEmailDocument(document, {
     blockRemote,
-    stripPixels: track,
-    rewriteLinks: track,
+    stripPixels: true,
+    rewriteLinks: true,
     trustedOrigins: attachmentOrigins(),
   });
+  const proxied = revision === contentRevision ? await proxyRemoteMedia(document, revision) : [];
+  if (revision !== contentRevision) {
+    proxied.forEach(revokeProxied);
+    return;
+  }
   if (revision === contentRevision) {
     remoteBlocked.value = blockRemote ? stats.blockedRemote : 0;
     // 仍然显示会再跑一遍清理。拦截清单保留打开这封邮件时的结果。
@@ -266,7 +354,7 @@ watch(() => [email.value.emailId, email.value.content, settingStore.blockTracker
 }, { immediate: true });
 
 const { t, te } = useI18n()
-const INTERCEPT_ORDER = ['active', 'pixel', 'stylesheet', 'import', 'font', 'remote', 'link'];
+const INTERCEPT_ORDER = ['active', 'pixel', 'stylesheet', 'import', 'font', 'remote', 'tracker', 'link'];
 
 const interceptGroups = computed(() => {
   const buckets = new Map();
@@ -741,6 +829,11 @@ const handleDelete = () => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.track-hint {
+  margin: 6px 0 0;
+  color: var(--regular-text-color);
 }
 
 .track-note {

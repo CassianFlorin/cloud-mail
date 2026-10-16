@@ -9,16 +9,16 @@ export default function emailHtmlTemplate(html, domain) {
 	const { document } = parseHTML(html);
 	const stats = protectEmailDocument(document, {
 		blockRemote: true,
-		keepRemote: true,
+		// 这个页面没有登录态，不能代取图片。留下原地址也不会再恢复，避免浏览器自己去请求。
+		keepRemote: false,
 		trustedOrigins: trustedOrigins(normalizedDomain)
 	});
 	html = document.toString();
 	const safeHtmlJson = JSON.stringify(html).replace(/</g, '\\u003C');
 	const interceptHtml = renderIntercept(stats.findings, stats.omitted);
 	const remoteBanner = stats.blockedRemote > 0 ? `
-        <div id="cm-remote-banner" style="margin:0 0 12px;padding:10px 12px;border:1px solid #d6e4ff;background:#f5f9ff;color:#1f2a37;font:14px/1.5 sans-serif;display:flex;gap:12px;align-items:center;justify-content:space-between;">
-            <span style="background:transparent">已拦截 ${stats.blockedRemote} 处远程内容，避免发件人知道这封邮件已被阅读。</span>
-            <button type="button" onclick="cmShowRemote()" style="border:0;background:#0e70df;color:#fff;border-radius:4px;padding:6px 10px;cursor:pointer;">显示图片</button>
+        <div id="cm-remote-banner" style="margin:0 0 12px;padding:10px 12px;border:1px solid #d6e4ff;background:#f5f9ff;color:#1f2a37;font:14px/1.5 sans-serif;">
+            <span style="background:transparent">已拦截 ${stats.blockedRemote} 处远程内容。此页不加载这些图片，避免把你的网络地址发给发件人。</span>
         </div>` : '';
 
 	return `<!DOCTYPE html>
@@ -52,29 +52,10 @@ export default function emailHtmlTemplate(html, domain) {
     <div class='content-box'>
         ${interceptHtml}
         ${remoteBanner}
-        <div id='container' class='content-html'></div>
+        <iframe id='container' class='content-html' sandbox='allow-same-origin allow-popups allow-popups-to-escape-sandbox' referrerpolicy='no-referrer' title='email'></iframe>
     </div>
 
     <script>
-
-        function cmShowRemote() {
-            const host = document.getElementById('container');
-            const root = host && host.shadowRoot;
-            if (!root) return;
-            root.querySelectorAll('[data-cm-src], [data-cm-srcset], [data-cm-poster], [data-cm-href], [data-cm-background], [data-cm-xlink], [data-cm-inline], [data-cm-css]').forEach(function (el) {
-                ['src', 'srcset', 'poster', 'href', 'background'].forEach(function (name) {
-                    const saved = el.getAttribute('data-cm-' + name);
-                    if (saved != null) el.setAttribute(name, saved);
-                });
-                const xlink = el.getAttribute('data-cm-xlink');
-                if (xlink != null) el.setAttribute('xlink:href', xlink);
-                if (el.hasAttribute('data-cm-inline')) el.setAttribute('style', el.getAttribute('data-cm-inline'));
-                if (el.hasAttribute('data-cm-css')) el.textContent = el.getAttribute('data-cm-css');
-                el.setAttribute('referrerpolicy', 'no-referrer');
-            });
-            const banner = document.getElementById('cm-remote-banner');
-            if (banner) banner.remove();
-        }
 
         function readBodyStyle(html) {
             const tag = html.match(/<body[^>]*>/i);
@@ -84,88 +65,28 @@ export default function emailHtmlTemplate(html, domain) {
         }
 
         function renderHTML(html) {
-            const container = document.getElementById('container');
-            const shadowRoot = container.attachShadow({ mode: 'open' });
-
-            // 只取 body 自己的 style，避免命中 data-cm-inline 里保存的原始追踪样式。
+            const frame = document.getElementById('container');
             const bodyStyle = readBodyStyle(html);
-
-            // 移除 <body> 标签
             const cleanedHtml = html.replace(/<\\/?body[^>]*>/gi, '');
-
-            // 渲染内容
-            shadowRoot.innerHTML = \`
-                <style>
-                    :host {
-                        all: initial;
-                        width: 100%;
-                        height: 100%;
-                        font-family: Inter, -apple-system, BlinkMacSystemFont,
-                                    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-                        font-size: 14px;
-                        line-height: 1.5;
-                        color: #13181D;
-                        word-break: break-word;
-                        overflow: auto; /* 添加滚动 */
-                    }
-
-                    h1, h2, h3, h4 {
-                        font-size: 18px;
-                        font-weight: 700;
-                    }
-
-                    p {
-                        margin: 0;
-                    }
-
-                    a {
-                        text-decoration: none;
-                        color: #0E70DF;
-                    }
-
-                    .shadow-content {
-                        background: #FFFFFF;
-                        width: fit-content;
-                        height: fit-content;
-                        min-width: 100%;
-                    }
-
-                    img:not(table img) {
-                        max-width: 100% !important;
-                        height: auto !important;
-                    }
-                </style>
-                <div class="shadow-content">
-                    \${cleanedHtml}
-                </div>
-            \`;
-
-            // 用 cssText 套用 body 样式，避免样式文本把 </style> 和追踪图片写进页面。
-            const styled = shadowRoot.querySelector('.shadow-content');
-            if (styled && bodyStyle) styled.style.cssText = bodyStyle;
-
-            // 自动缩放
-            autoScale(shadowRoot, container);
+            // 没有 allow-scripts。allow-same-origin 只用来量高度。
+            frame.srcdoc = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \\'none\\'; img-src blob: data:; media-src blob: data:; style-src \\'unsafe-inline\\'; font-src blob: data:; form-action \\'none\\'"><style>html,body{margin:0;padding:0}body{font-family:Inter,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;font-size:14px;line-height:1.5;color:#13181D;word-break:break-word}p{margin:0}a{text-decoration:none;color:#0E70DF}.shadow-content{background:#fff;width:fit-content;min-width:100%}img:not(table img){max-width:100%!important;height:auto!important}</style></head><body><div class="shadow-content">' + cleanedHtml + '</div></body></html>';
+            frame.onload = function () {
+                const styled = frame.contentDocument && frame.contentDocument.querySelector('.shadow-content');
+                if (styled && bodyStyle) styled.style.cssText = bodyStyle;
+                autoScale(frame);
+            };
         }
 
-        function autoScale(shadowRoot, container) {
-
-            if (!shadowRoot || !container) return;
-
-            const parent = container;
-            const shadowContent = shadowRoot.querySelector('.shadow-content');
-
-            if (!shadowContent) return;
-
-            const parentWidth = parent.offsetWidth;
-            const childWidth = shadowContent.scrollWidth;
-
-            if (childWidth === 0) return;
-
-            const scale = parentWidth / childWidth;
-
-            const hostElement = shadowRoot.host;
-            hostElement.style.zoom = scale;
+        function autoScale(frame) {
+            const doc = frame.contentDocument;
+            const content = doc && doc.querySelector('.shadow-content');
+            if (!content) return;
+            const parentWidth = frame.parentElement ? frame.parentElement.clientWidth : frame.offsetWidth;
+            const childWidth = content.scrollWidth;
+            if (!parentWidth || !childWidth) return;
+            const scale = childWidth > parentWidth ? parentWidth / childWidth : 1;
+            frame.style.zoom = String(scale);
+            frame.style.height = Math.max(Math.ceil(content.scrollHeight * scale), 40) + 'px';
         }
 
         // 使用示例
@@ -185,6 +106,7 @@ const INTERCEPT_LABELS = {
 	import: '外部样式',
 	font: '远程字体',
 	remote: '远程图片和资源',
+	tracker: '已停用的追踪链接',
 	link: '追踪链接'
 };
 
@@ -235,7 +157,7 @@ function renderIntercept(findings, omitted) {
 		if (!buckets.has(item.kind)) buckets.set(item.kind, []);
 		buckets.get(item.kind).push(item);
 	}
-	const order = ['active', 'pixel', 'stylesheet', 'import', 'font', 'remote', 'link'];
+	const order = ['active', 'pixel', 'stylesheet', 'import', 'font', 'remote', 'tracker', 'link'];
 	const kinds = [...order.filter(kind => buckets.has(kind)), ...[...buckets.keys()].filter(kind => !order.includes(kind))];
 	const body = kinds.map(kind => {
 		const items = buckets.get(kind).map(item => `<li style="margin:0 0 8px;background:transparent;overflow-wrap:anywhere;">${findingHtml(item)}</li>`).join('');

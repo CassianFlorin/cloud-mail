@@ -4,6 +4,7 @@
 // 脚本、事件和可执行地址与追踪开关无关，阅读时一律去掉。
 // 本站 /attachments/ 资源不是第三方追踪器，阅读和引用时都要保留。
 // findings 记下这次实际去掉的内容，打开邮件时可以逐项查看。
+// 解不开目的地的追踪链接会取消点击，避免一点就通知发件人。
 
 const TRACKING_PARAMS = new Set([
 	'mc_cid', 'mc_eid', 'mkt_tok', 'mkt_unsubscribe', 'vero_id', 'vero_conv',
@@ -74,6 +75,8 @@ export function protectEmailDocument(document, options = {}) {
 	protectStylesheets(document, stats, settings, note);
 	protectCss(document, stats, settings, note);
 	if (settings.rewriteLinks) rewriteLinks(document, stats, note);
+	// 解不开真实地址的点击追踪，点开会通知发件人。阅读时直接取消点击。
+	disableOpaqueTrackers(document, note);
 
 	return stats;
 }
@@ -272,6 +275,33 @@ function rewriteStyle(el, original, stats, settings, kind, note) {
 	else el.setAttribute('style', result.css);
 	stats.blockedRemote += result.remote;
 	stats.strippedPixels += result.pixels;
+}
+
+const CLICK_TRACKER_HOST = /(^|\.)((list-manage\.com)|(mandrillapp\.com)|(sendgrid\.net)|(hubspotemail\.net)|(mailgun\.net)|(mailgun\.org)|(pstmrk\.it)|(awstrack\.me)|(urldefense\.proofpoint\.com)|(urldefense\.com)|(safelinks\.protection\.outlook\.com)|(safelinks\.protection\.office365\.us)|(linkprotect\.cudasvc\.com)|(protect2?\.fireeye\.com)|(protection\.sophos\.com)|(secure-web\.cisco\.com)|(avanan\.click)|(slack-redir\.net)|(mimecast\.com)|(mimecastprotect\.com)|(mailtrack\.io)|(mailchi\.mp))$/i;
+
+function disableOpaqueTrackers(document, note) {
+	for (const el of [...document.querySelectorAll('a[href], area[href]')]) {
+		const href = el.getAttribute('href');
+		if (!isOpaqueClickTracker(href)) continue;
+		note('tracker', href);
+		el.removeAttribute('href');
+	}
+}
+
+function isOpaqueClickTracker(value) {
+	let url;
+	try {
+		url = new URL(String(value || '').trim());
+	} catch {
+		return false;
+	}
+	const host = url.hostname;
+	if (CLICK_TRACKER_HOST.test(host)) return true;
+	if (/(^|\.)google\.com$/i.test(host) && url.pathname === '/url') return true;
+	if (/(^|\.)(l\.facebook\.com|lm\.facebook\.com)$/i.test(host) && /^\/l\.php$/i.test(url.pathname)) return true;
+	if (/(^|\.)linkedin\.com$/i.test(host) && url.pathname.toLowerCase().startsWith('/safety/go')) return true;
+	if (/(^|\.)trendmicro\.com$/i.test(host) && /clicktime/i.test(url.pathname)) return true;
+	return false;
 }
 
 function rewriteLinks(document, stats, note) {
