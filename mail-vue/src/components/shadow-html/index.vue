@@ -1,11 +1,17 @@
 <template>
   <div class="content-box" ref="contentBox">
-    <div ref="container" class="content-html"></div>
+    <iframe
+      ref="frame"
+      class="content-html"
+      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      referrerpolicy="no-referrer"
+      title="email"
+    ></iframe>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 
 const props = defineProps({
   html: {
@@ -14,9 +20,8 @@ const props = defineProps({
   }
 })
 
-const container = ref(null)
+const frame = ref(null)
 const contentBox = ref(null)
-let shadowRoot = null
 
 function readBodyStyle(html) {
   const tag = html.match(/<body[^>]*>/i);
@@ -26,106 +31,78 @@ function readBodyStyle(html) {
   return style ? style[1] : '';
 }
 
-function updateContent() {
-  if (!shadowRoot) return;
-
-  const bodyStyle = readBodyStyle(props.html);
-
-  // 2. 移除 <body> 标签（保留内容）
-  const cleanedHtml = props.html.replace(/<\/?body[^>]*>/gi, '');
-
-  // 3. 将 body 的 style 应用到 .shadow-content
-  shadowRoot.innerHTML = `
-    <style>
-      :host {
-        all: initial;
-        width: 100%;
-        height: 100%;
-        font-family: Inter, 'Helvetica Neue', Helvetica, 'PingFang SC',
-                    'Hiragino Sans GB', 'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
-        font-size: 14px;
-        line-height: 1.5;
-        color: #13181D;
-        word-break: break-word;
-      }
-
-      h1, h2, h3, h4 {
-          font-size: 18px;
-          font-weight: 700;
-      }
-
-      p {
-        margin: 0;
-      }
-
-      a {
-        text-decoration: none;
-        color: #0E70DF;
-      }
-
-      .shadow-content {
-        background: #FFFFFF;
-        width: fit-content;
-        height: fit-content;
-        min-width: 100%;
-      }
-
-      img:not(table img) {
-        max-width: 100%;
-        height: auto !important;
-      }
-
-    </style>
-    <div class="shadow-content">
-      ${cleanedHtml}
-    </div>
-  `;
-  // 用 cssText 套用 body 样式，避免样式文本把 </style> 和追踪图片写进页面。
-  const styled = shadowRoot.querySelector('.shadow-content');
-  if (styled && bodyStyle) styled.style.cssText = bodyStyle;
+function documentHtml(html) {
+  const cleanedHtml = html.replace(/<\/?body[^>]*>/gi, '');
+  // sandbox 没有 allow-scripts，邮件里的脚本和事件不会执行。
+  // allow-same-origin 用来量高度，并让本页生成的 blob 图片能显示。不能再打开脚本。
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src blob: data:; media-src blob: data:; style-src 'unsafe-inline'; font-src blob: data:; form-action 'none'"><style>
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: Inter, 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      color: #13181D;
+      word-break: break-word;
+    }
+    h1, h2, h3, h4 { font-size: 18px; font-weight: 700; }
+    p { margin: 0; }
+    a { text-decoration: none; color: #0E70DF; }
+    .shadow-content { background: #FFFFFF; width: fit-content; min-width: 100%; }
+    img:not(table img) { max-width: 100%; height: auto !important; }
+  </style></head><body><div class="shadow-content">${cleanedHtml}</div></body></html>`;
 }
 
-function autoScale() {
-  if (!shadowRoot || !contentBox.value) return
+function updateContent() {
+  const host = frame.value;
+  if (!host) return;
+  const bodyStyle = readBodyStyle(props.html);
+  host.srcdoc = documentHtml(props.html);
+  host.onload = () => {
+    const styled = host.contentDocument && host.contentDocument.querySelector('.shadow-content');
+    if (styled && bodyStyle) styled.style.cssText = bodyStyle;
+    fit();
+  };
+}
 
-  const parent = contentBox.value
-  const shadowContent = shadowRoot.querySelector('.shadow-content')
-
-  if (!shadowContent) return
-
-  const parentWidth = parent.offsetWidth
-  const childWidth = shadowContent.scrollWidth
-
-  if (childWidth === 0) return
-
-  const scale = parentWidth / childWidth
-
-  const hostElement = shadowRoot.host
-  hostElement.style.zoom = scale
+function fit() {
+  const host = frame.value;
+  const parent = contentBox.value;
+  const doc = host && host.contentDocument;
+  const content = doc && doc.querySelector('.shadow-content');
+  if (!host || !parent || !content) return;
+  const parentWidth = parent.clientWidth || 1;
+  const childWidth = content.scrollWidth || parentWidth;
+  const scale = childWidth > parentWidth ? parentWidth / childWidth : 1;
+  host.style.zoom = String(scale);
+  const height = content.scrollHeight || doc.body.scrollHeight || 0;
+  host.style.height = Math.max(Math.ceil(height * scale), 40) + 'px';
 }
 
 onMounted(() => {
-  shadowRoot = container.value.attachShadow({ mode: 'open' })
-  updateContent()
-  autoScale()
+  updateContent();
+  window.addEventListener('resize', fit);
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', fit);
 })
 
 watch(() => props.html, () => {
-  updateContent()
-  autoScale()
+  updateContent();
 })
 </script>
 
 <style scoped>
 .content-box {
   width: 100%;
-  height: 100%;
   overflow: hidden;
   font-family: Inter, "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
 }
 
 .content-html {
   width: 100%;
-  height: 100%;
+  border: 0;
+  display: block;
+  background: transparent;
 }
 </style>

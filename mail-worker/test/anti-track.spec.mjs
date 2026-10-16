@@ -233,3 +233,13 @@ test('records the remote items, pixels, styles, and links removed from this mess
 	assert.ok(stats.findings.some(item => item.kind === 'active' && item.name === 'prefetch' && item.url === 'https://example.com/next'));
 	assert.equal(stats.omitted, 0);
 });
+
+test('disables click trackers whose destination is not visible', () => {
+	const { document, stats } = render(`
+		<a href="https://u123.ct.sendgrid.net/ls/click?upn=abc">newsletter</a>
+		<a href="https://example.com/docs">docs</a>
+	`, { blockRemote: false, stripPixels: false, rewriteLinks: false });
+	assert.equal(document.querySelector('a').hasAttribute('href'), false);
+	assert.equal(document.querySelectorAll('a')[1].getAttribute('href'), 'https://example.com/docs');
+	assert.ok(stats.findings.some(item => item.kind === 'tracker' && item.url.includes('sendgrid.net')));
+});

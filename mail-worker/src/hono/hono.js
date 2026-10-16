@@ -9,7 +9,7 @@ app.use('*', cors());
 app.onError((err, c) => {
 	// File clients consume binary bodies, so authentication failures must also
 	// have an HTTP error status instead of looking like a successful JSON file.
-	if (c.req.path.startsWith('/oss/')) {
+	if (c.req.path.startsWith('/oss/') || c.req.path === '/remote-image') {
 		const status = [400, 401, 403, 404, 409].includes(err.code) ? err.code : 500;
 		return c.json(result.fail('File access failed', status), status);
 	}
