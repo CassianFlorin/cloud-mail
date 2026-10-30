@@ -15,6 +15,8 @@ The mail intercept report was deployed on 2026-10-15 as Worker version
 `15d59873-ab4c-4272-8419-63662c63adc8`.
 The mail privacy isolation was deployed on 2026-10-16 as Worker version
 `6dfa4561-4dd7-4fe0-91b5-6dae465e6a03`.
+The upstream 3.4.0 merge was deployed on 2026-10-30 as Worker version
+`311e623a-c6ed-4783-9d13-1abc30b552b3`.
 
 ## Endpoints
 
@@ -214,6 +216,28 @@ after cache revalidation, referenced `/assets/index-DtD_tdOG.js`, which
 contains the disabled-tracker label. An anonymous attachment request and an
 anonymous remote-image request both returned HTTP 401. No database migration
 was applied.
+
+## Upstream 3.4.0 merge (2026-10-30)
+
+Merged maillab/cloud-mail up to `d115f4c` (3.4.0 and later fixes): advanced
+search with keyword highlighting, on-behalf-of sender display, per-recipient
+sending, internal forwarding to external mailboxes, invitation-code fixes and
+UI updates. Private R2 access, the sandboxed reader and anti-track handling
+were kept; upstream's anonymous root `/oss/` route was not adopted, and the
+store-level DOMPurify pass was dropped so the intercept report stays complete.
+`wrangler.personal.toml` gained the `forward` send-email binding.
+
+Before deploying, the production D1 `email` table received one new column:
+`ALTER TABLE email ADD COLUMN sender_email TEXT NOT NULL DEFAULT ''`. No other
+migration or initialization was replayed.
+
+The anti-track (13), privacy (2), mail-claim (10), storage (10) and Telegram
+(21) tests passed, and the frontend production build passed. Deployment
+`311e623a-c6ed-4783-9d13-1abc30b552b3` serves https://mail.florin-studio.com.
+The website returned HTTP 200 and referenced `/assets/index-B2E0VsGK.js`.
+Anonymous requests to `/api/oss/`, `/attachments/` and `/api/remote-image`
+returned HTTP 401; root `/oss/` paths fall through to the single-page app
+HTML and do not serve stored objects. No real email was sent by the agent.
 
 ## Verification
 
