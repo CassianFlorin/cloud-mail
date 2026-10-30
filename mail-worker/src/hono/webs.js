@@ -11,6 +11,7 @@ import '../api/test-api';
 import '../api/r2-api';
 import '../api/remote-image-api';
 import '../api/resend-api';
+import '../api/sendflare-api';
 import '../api/user-api';
 import '../api/my-api';
 import '../api/role-api'
