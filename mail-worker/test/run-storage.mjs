@@ -62,6 +62,8 @@ await build({
 	bundle: true,
 	// Node's bundled CommonJS dependencies still need a real require function.
 	banner: { js: "import { createRequire as nodeRequire } from 'node:module'; const require = nodeRequire(import.meta.url);" },
+	// Workers-only modules are imported lazily and never reached by these tests.
+	external: ['cloudflare:*'],
 	platform: 'node',
 	format: 'esm'
 });

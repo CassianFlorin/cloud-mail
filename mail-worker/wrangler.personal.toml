@@ -25,6 +25,10 @@ id = "5375f4835d434bc8905cb78b862b3c2c"
 binding = "r2"
 bucket_name = "cloud-mail-files"
 
+# Internal mail forwarding to verified external mailboxes (upstream 3.4.0).
+[[send_email]]
+name = "forward"
+
 [observability]
 enabled = true
 
