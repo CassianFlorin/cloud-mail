@@ -17,6 +17,8 @@ The mail privacy isolation was deployed on 2026-10-16 as Worker version
 `6dfa4561-4dd7-4fe0-91b5-6dae465e6a03`.
 The upstream 3.4.0 merge was deployed on 2026-10-30 as Worker version
 `311e623a-c6ed-4783-9d13-1abc30b552b3`.
+The two-way Telegram bot was deployed on 2026-10-30 as Worker version
+`82669878-aecf-414d-a412-2763ab4f5e6c`.
 
 ## Endpoints
 
@@ -238,6 +240,35 @@ The website returned HTTP 200 and referenced `/assets/index-B2E0VsGK.js`.
 Anonymous requests to `/api/oss/`, `/attachments/` and `/api/remote-image`
 returned HTTP 401; root `/oss/` paths fall through to the single-page app
 HTML and do not serve stored objects. No real email was sent by the agent.
+
+## Two-way Telegram bot (2026-10-30)
+
+The bot now accepts updates at `/api/telegram/webhook`. Requests must carry a
+`secret_token` derived from `jwt_secret`, and only chats listed in the Telegram
+chat-ID setting are answered. Saving the Telegram settings registers the
+webhook and command menu; turning the bot off removes the webhook. The webhook
+is not active until the settings are saved once after this deployment.
+
+- `/new [prefix|address]` creates a mailbox owned by the administrator,
+  without the human-verification check or mailbox limit.
+- `/latest [n]` re-sends the latest 1-10 received messages; `/code` returns the
+  latest verification code.
+- Notifications gain Mark-read and Delete buttons.
+- Replying to a notification sends a plain-text reply from the original
+  recipient address to the original sender. The message is identified by the
+  signed View link of the bot's own message, so no KV mapping is stored.
+- Notifications show the on-behalf-of marker when the envelope sender differs
+  from the From address, matching the web detail page. The address is shown
+  only when the sender display setting is "show".
+
+The mail-claim (10), storage (10) and Telegram (24) tests passed, and the
+frontend production build passed. Deployment
+`82669878-aecf-414d-a412-2763ab4f5e6c` serves https://mail.florin-studio.com.
+The website returned HTTP 200. Webhook requests without the secret, or with a
+wrong secret, returned HTTP 403. An invalid signed View token returned the
+Access denied page, and an anonymous attachment request returned HTTP 401.
+No database migration was applied. No email or Telegram message was sent by
+the agent, and the webhook was not registered by the agent.
 
 ## Verification
 
