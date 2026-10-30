@@ -33,7 +33,7 @@ await build({
 			build.onLoad({ filter: /.*/, namespace: 'fixture' }, args => ({
 				contents: args.path === 'setting-service'
 					? 'export default { query: async c => c.setting };'
-					: 'export default { generateToken: async (c, data) => `test-token-${data.emailId}`, verifyToken: async () => null };'
+					: 'export default { generateToken: async (c, data) => `test-token-${data.emailId}`, verifyToken: async (c, token) => /^test-token-\\d+$/.test(token) ? { emailId: Number(token.slice(11)) } : null };'
 			}));
 		}
 	}]

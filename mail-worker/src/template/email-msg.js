@@ -9,6 +9,16 @@ function field(value, maxLength) {
 		: text;
 }
 
+// 与网页详情页的“代发”标识一致：信封发件人与 From 地址不同即视为代发。
+export function sentViaAddress(email) {
+	const raw = String(email.senderEmail || '').trim();
+	if (!raw) return '';
+	const matched = raw.match(/<([^>]+)>/);
+	const address = (matched ? matched[1] : raw).trim();
+	if (!address || address.toLowerCase() === String(email.sendEmail || '').trim().toLowerCase()) return '';
+	return address;
+}
+
 export default function emailMsgTemplate(email, tgMsgTo, tgMsgFrom, tgMsgText) {
 	const blocks = [{
 		type: 'heading',
@@ -26,7 +36,19 @@ export default function emailMsgTemplate(email, tgMsgTo, tgMsgFrom, tgMsgText) {
 			text.push({ type: 'code', text: address });
 		}
 		if (text.length === 1) text.push('（未知）');
+		const sentVia = sentViaAddress(email);
+		if (sentVia) text.push(' ', { type: 'bold', text: '[代发]' });
 		blocks.push({ type: 'paragraph', text });
+		// 只显示名字时不暴露代发地址，只保留标识。
+		if (sentVia && tgMsgFrom === 'show') {
+			blocks.push({
+				type: 'paragraph',
+				text: [
+					{ type: 'bold', text: '代发地址：' },
+					{ type: 'code', text: field(sentVia, 254) }
+				]
+			});
+		}
 	}
 
 	if (tgMsgTo === 'show') {
