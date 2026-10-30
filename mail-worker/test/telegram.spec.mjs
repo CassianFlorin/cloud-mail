@@ -219,6 +219,7 @@ test('production sender sends native blocks and preserves signed View and clipbo
 		assert.equal(buttons[0][0].text, '查看完整邮件');
 		assert.equal(buttons[0][0].web_app.url, 'https://mail.example.com/api/telegram/getEmail/test-token-42');
 		assert.equal(buttons[1][0].copy_text.text, '012345');
+		assert.deepEqual(buttons[2].map(button => button.callback_data), ['read:42', 'del:42']);
 	}
 });
 
@@ -231,7 +232,7 @@ test('absent and oversized verification codes do not produce invalid clipboard b
 	for (const code of [undefined, '', 'x'.repeat(257)]) {
 		await service.sendEmailToBot({ setting }, { ...email, code });
 	}
-	assert.ok(payloads.every(payload => payload.reply_markup.inline_keyboard.length === 1));
+	assert.ok(payloads.every(payload => !payload.reply_markup.inline_keyboard.flat().some(button => button.copy_text)));
 });
 
 test('Telegram errors are reported without retrying and duplicating notifications', async t => {
@@ -246,4 +247,38 @@ test('Telegram errors are reported without retrying and duplicating notification
 	assert.equal(requests, 1);
 	assert.equal(errors.length, 1);
 	assert.match(errors[0], /400.*Bad Request/);
+});
+
+test('replies resolve the email only from the bot signed View button', async () => {
+	const keyboard = await service.buildKeyboard({}, { ...email, code: '' }, 'mail.example.com');
+	const message = { from: { id: 1001, is_bot: true }, reply_markup: { inline_keyboard: keyboard } };
+	assert.equal(await service.emailIdFromMessage({}, message, '1001:abc'), 42);
+	assert.equal(await service.emailIdFromMessage({}, { ...message, from: { id: 2002, is_bot: true } }, '1001:abc'), null);
+	assert.equal(await service.emailIdFromMessage({}, { ...message, from: { id: 1001, is_bot: false } }, '1001:abc'), null);
+	const forged = { inline_keyboard: [[{ text: 'x', web_app: { url: 'https://evil.example/api/telegram/getEmail/forged' } }]] };
+	assert.equal(await service.emailIdFromMessage({}, { ...message, reply_markup: forged }, '1001:abc'), null);
+});
+
+test('webhook secret is stable, secret-dependent and uses Telegram-safe characters', async () => {
+	const a = await service.webhookSecret({ env: { jwt_secret: 'one' } });
+	assert.equal(a, await service.webhookSecret({ env: { jwt_secret: 'one' } }));
+	assert.notEqual(a, await service.webhookSecret({ env: { jwt_secret: 'two' } }));
+	assert.match(a, /^[0-9a-f]{64}$/);
+});
+
+test('sent-via marker matches the web detail page and respects sender visibility', () => {
+	const via = { ...email, senderEmail: 'Bounce <bounce+abc@mailer.example.net>' };
+	const shown = template(via, 'show', 'show', 'hide');
+	validateBlocks(shown.blocks);
+	assert.match(visible(shown.blocks[1].text), /\[代发\]$/);
+	assert.match(visible(shown.blocks[2].text), /代发地址：bounce\+abc@mailer.example.net/);
+
+	const nameOnly = JSON.stringify(template(via, 'show', 'only-name', 'hide'));
+	assert.ok(nameOnly.includes('[代发]'));
+	assert.ok(!nameOnly.includes('mailer.example.net'));
+
+	assert.ok(!JSON.stringify(template(via, 'show', 'hide', 'hide')).includes('代发'));
+	for (const senderEmail of ['', 'HELLO@example.com', '<hello@example.com>']) {
+		assert.ok(!JSON.stringify(template({ ...email, senderEmail }, 'show', 'show', 'hide')).includes('代发'));
+	}
 });
