@@ -19,6 +19,8 @@ The upstream 3.4.0 merge was deployed on 2026-10-30 as Worker version
 `311e623a-c6ed-4783-9d13-1abc30b552b3`.
 The two-way Telegram bot was deployed on 2026-10-30 as Worker version
 `82669878-aecf-414d-a412-2763ab4f5e6c`.
+Sendflare sending and the provider selector were deployed on 2026-10-30 as
+Worker version `3b6850b5-755c-400e-9e9d-70c4a4ab232a`.
 
 ## Endpoints
 
@@ -91,6 +93,7 @@ pnpm install --frozen-lockfile
 pnpm run test:claim
 pnpm run test:storage
 pnpm run test:telegram
+pnpm run test:sendflare
 pnpm exec wrangler deploy --config wrangler.personal.toml
 ```
 
@@ -276,6 +279,41 @@ to a notification for an external message sent from Gmail; the bot confirmed
 the reply to the original sender. Gmail received the reply from
 `admin@florin-studio.com` with the expected body, which also confirms actual
 outgoing delivery through Resend.
+
+## Sendflare sending and provider selector (2026-10-30)
+
+Sendflare (https://sendflare.com) is available as an outgoing provider next to
+Resend. Mail settings gain a sending-provider selector: Auto, Cloudflare,
+Resend or Sendflare. Auto keeps the previous order (Cloudflare, then Resend,
+then Sendflare); this deployment has no Cloudflare `email` binding, so Auto
+continues to use Resend. A chosen provider is used exclusively; if the sending
+domain has no token for it, outgoing mail is refused instead of falling back.
+Switching providers never removes saved Resend or Sendflare tokens.
+
+- Sendflare tokens are stored per domain in application settings, never in
+  this repository.
+- A normal send with several recipients puts the first in To and the rest in
+  Cc, because Sendflare's single-send API accepts one To address. Per-recipient
+  sending uses the batch API in groups of 50.
+- Replies pass In-Reply-To/References as custom headers; whether Sendflare
+  keeps them has not been confirmed.
+- Delivery status webhooks: `https://mail.florin-studio.com/api/webhooks/sendflare`
+  (delivered, bounced, complaint). Setting the Worker secret
+  `sendflare_webhook_secret` enables signature checks; it is not set yet.
+
+Before deploying, the production D1 `setting` table received two new columns:
+`sendflare_tokens TEXT NOT NULL DEFAULT '{}'` and
+`send_provider TEXT NOT NULL DEFAULT ''`. No other migration or initialization
+was replayed.
+
+The mail-claim (10), storage (10), Telegram (24) and Sendflare (5) tests
+passed, and the frontend production build passed. Deployment
+`3b6850b5-755c-400e-9e9d-70c4a4ab232a` serves https://mail.florin-studio.com.
+The website returned HTTP 200 and referenced `/assets/index-B29QUzx_.js`,
+which contains the provider selector. An anonymous settings request returned
+the application's 401 code, and an engagement-only webhook probe returned
+HTTP 200 without changing data. No Sendflare account, token or real email was
+used by the agent.
 
 ## Verification
 
