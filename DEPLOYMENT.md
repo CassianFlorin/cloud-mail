@@ -301,6 +301,13 @@ Switching providers never removes saved Resend or Sendflare tokens.
   (delivered, bounced, complaint). Setting the Worker secret
   `sendflare_webhook_secret` enables signature checks; it is not set yet.
 
+Sendflare DNS records in the Cloudflare zone (added 2026-10-30, public
+resolution confirmed): DKIM TXT `sendflare._domainkey`, MX
+`mail` -> `feedback-smtp.us-west-2.amazonses.com` (priority 10), TXT `mail`
+`v=spf1 include:amazonses.com ~all`, and TXT `_dmarc` `v=DMARC1; p=none;`.
+The `mail` MX/TXT coexist with the website's proxied AAAA record; inbound root
+MX and the Resend `send`/`resend._domainkey` records are unchanged.
+
 Before deploying, the production D1 `setting` table received two new columns:
 `sendflare_tokens TEXT NOT NULL DEFAULT '{}'` and
 `send_provider TEXT NOT NULL DEFAULT ''`. No other migration or initialization
