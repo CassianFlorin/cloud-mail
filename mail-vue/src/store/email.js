@@ -18,11 +18,23 @@ export const useEmailStore = defineStore('email', {
         },
         sendScroll: null,
         detailMap: {},
+        searchParams: {
+            text: '',
+            type: 'subject',
+            startDate: '',
+            endDate: '',
+        },
     }),
     persist: {
         pick: ['contentData'],
     },
     actions: {
+        setSearchParams(params) {
+            this.searchParams = {
+                ...this.searchParams,
+                ...params,
+            }
+        },
         fetchList(request) {
             return request(0).then(data => {
                 request(1).then(fullData => {
@@ -39,6 +51,7 @@ export const useEmailStore = defineStore('email', {
             const currentId = this.contentData.email?.emailId
             for (const item of list) {
                 if (!item?.emailId) continue
+                // 不在这里用 DOMPurify：正文由无脚本沙箱和 anti-track 处理，提前清洗会让拦截清单漏记脚本等内容。
                 if (!item.attList) item.attList = []
                 // 完整列表可能早于「标已读」返回，避免把本地已读状态盖回未读
                 const prev = this.detailMap[item.emailId]
