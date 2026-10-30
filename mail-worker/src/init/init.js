@@ -33,8 +33,24 @@ const dbInit = {
 		await this.v3_2DB(c);
 		await this.v3_3DB(c);
 		await this.v3_4DB(c);
+		await this.sendflareDB(c);
 		await settingService.refresh(c);
 		return c.text('success');
+	},
+
+	// 分支自有迁移，独立命名以免与上游版本号冲突。
+	async sendflareDB(c) {
+		const ADD_COLUMN_SQL_LIST = [
+			`ALTER TABLE setting ADD COLUMN sendflare_tokens TEXT NOT NULL DEFAULT '{}';`,
+			`ALTER TABLE setting ADD COLUMN send_provider TEXT NOT NULL DEFAULT '';`
+		];
+		for (const sql of ADD_COLUMN_SQL_LIST) {
+			try {
+				await c.env.db.prepare(sql).run();
+			} catch (e) {
+				console.warn(`跳过字段：${e.message}`);
+			}
+		}
 	},
 
 	async v3_4DB(c) {
