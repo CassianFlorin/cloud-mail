@@ -64,7 +64,7 @@ The two-way Telegram bot was deployed on 2026-10-30 as Worker version
   Public DNS lookups match the requested records. Resend reports the domain
   and all four records as verified.
 - The outgoing mail switch is enabled; the D1 and KV sending credentials match.
-  An actual outgoing reply still needs delivery confirmation.
+  Outgoing delivery to Gmail was confirmed on 2026-10-30.
 - Storage and request quotas still apply; this is not unlimited storage.
 - The personalization card includes a login appearance preview, a labeled
   opacity slider, and text actions for editing the title, changing the background,
@@ -270,6 +270,13 @@ Access denied page, and an anonymous attachment request returned HTTP 401.
 No database migration was applied. No email or Telegram message was sent by
 the agent, and the webhook was not registered by the agent.
 
+The owner then saved the Telegram settings, which registered the webhook.
+`/help` answered in the configured private chat. The owner replied in Telegram
+to a notification for an external message sent from Gmail; the bot confirmed
+the reply to the original sender. Gmail received the reply from
+`admin@florin-studio.com` with the expected body, which also confirms actual
+outgoing delivery through Resend.
+
 ## Verification
 
 - Frontend production build passed.
@@ -289,8 +296,8 @@ the agent, and the webhook was not registered by the agent.
 - Enabled catch-all rule targets `cloud-mail`.
 - The user confirmed receipt of external test messages sent both to the
   administrator and to a previously unused address.
-- Resend domain authentication passed; actual outgoing email delivery remains
-  unverified until a test reply is received externally.
+- Resend domain authentication passed; actual outgoing delivery was confirmed
+  on 2026-10-30 when Gmail received a reply sent from Telegram.
 - The user confirmed the mail-claim result. Automated browser inspection of the
   authenticated live session was unavailable; personalization checks used local
   mocked settings.
