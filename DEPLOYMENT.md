@@ -295,8 +295,8 @@ Switching providers never removes saved Resend or Sendflare tokens.
 - A normal send with several recipients puts the first in To and the rest in
   Cc, because Sendflare's single-send API accepts one To address. Per-recipient
   sending uses the batch API in groups of 50.
-- Replies pass In-Reply-To/References as custom headers; whether Sendflare
-  keeps them has not been confirmed.
+- Replies pass In-Reply-To/References as custom headers; the Sendflare API
+  accepts them (a reply was sent successfully).
 - Delivery status webhooks: `https://mail.florin-studio.com/api/webhooks/sendflare`
   (delivered, bounced, complaint). Setting the Worker secret
   `sendflare_webhook_secret` enables signature checks; it is not set yet.
@@ -321,6 +321,12 @@ which contains the provider selector. An anonymous settings request returned
 the application's 401 code, and an engagement-only webhook probe returned
 HTTP 200 without changing data. No Sendflare account, token or real email was
 used by the agent.
+
+The owner then verified the domain in Sendflare, saved a token for
+`florin-studio.com` and set the provider to Sendflare. A Telegram reply to a
+Gmail message was sent successfully on 2026-10-30 as email 62, with Sendflare
+ID `4f1acf91-0b7c-44f1-b977-ac5d09469463`. Its status stays Sent because the
+delivery webhook is not registered in Sendflare yet.
 
 ## Verification
 
