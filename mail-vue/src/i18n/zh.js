@@ -420,7 +420,7 @@ const zh = {
     noRecipientTitle: '无人收件',
     noRecipientDesc: '即使没有注册的邮箱也能收到邮件',
     plusAddressTitle: '+ 标签收信',
-    plusAddressDesc: '开启后 a+标签@ 的邮件会投递到 a@；关闭后只有完全一致的邮箱能收信',
+    plusAddressDesc: '开启后发到「名字+标签」的邮件会投递到「名字」邮箱；关闭后只有完全一致的邮箱能收信',
     preview: '预览',
     help: '帮助',
     document: '项目文档',

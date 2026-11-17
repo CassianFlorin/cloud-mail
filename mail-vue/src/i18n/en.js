@@ -420,7 +420,7 @@ const en = {
     noRecipientTitle: 'No recipient',
     noRecipientDesc: 'Emails can be received even without a registered email address',
     plusAddressTitle: 'Plus addressing',
-    plusAddressDesc: 'When on, mail to a+tag@ is delivered to a@. When off, only exact addresses receive mail',
+    plusAddressDesc: 'When on, mail to name+tag is delivered to the name mailbox. When off, only exact addresses receive mail',
     preview: 'Preview',
     help: 'Help',
     document: 'Document',
