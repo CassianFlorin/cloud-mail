@@ -6,12 +6,15 @@ const API_BASE = 'https://api.sendflare.com';
 
 const sendflareService = {
 
-	// 单封接口的 to 只接受一个地址，其余收件人放入抄送。
+	// 单封接口的 to 只接受一个地址，其余收件人放入抄送，排在用户填写的抄送之前。
 	async send(token, params) {
-		const [to, ...cc] = params.receiveEmail;
+		const [to, ...restTo] = params.receiveEmail;
+		const cc = [...restTo, ...(params.ccEmail || [])];
+		const bcc = [...(params.bccEmail || [])];
 		const form = await this.toSendForm(params);
 		form.to = to;
 		if (cc.length > 0) form.cc = cc;
+		if (bcc.length > 0) form.bcc = bcc;
 		const data = await this.request(token, '/v1/send', form);
 		// 文档示例的返回字段拼写为 emilId，兼容两种写法。
 		return data?.emailId || data?.emilId;

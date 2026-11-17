@@ -153,7 +153,7 @@ test('real Worker serves legacy bytes to a valid administrator session through b
 	c.env.jwt_secret = 'local-test-signing-key';
 	c.env.domain = ['example.test'];
 	const sessionId = 'valid-local-session';
-	const token = await jwt.generateToken(c, { userId: 1, token: sessionId }, 60);
+	const token = await jwt.generateToken(c, { userId: 1, token: sessionId, gen: 1 }, 60);
 	c.env.kv.get = async key => {
 		if (key === 'auth-uid:1') return {
 			tokens: [sessionId], user: { userId: 1, email: c.env.admin },
