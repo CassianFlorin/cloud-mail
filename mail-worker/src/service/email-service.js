@@ -28,6 +28,7 @@ import webhookService from './webhook-service';
 import forwardMime from '../utils/forward-mime';
 import verifyUtils from '../utils/verify-utils';
 import { notifyMailWsFromContext } from '../websocket/notify';
+import { resolveRecipient } from '../email/recipient';
 
 // 官方未公布批量上限，保守分批以兼顾 5 次/秒的速率限制。
 const SENDFLARE_BATCH_SIZE = 50;
@@ -995,31 +996,11 @@ const emailService = {
 	//处理站内邮件发送
 	async HandleOnSiteEmail(c, receiveEmail, sendEmailData, attList) {
 
-		const { noRecipient  } = await settingService.query(c);
+		const { noRecipient, plusAddress } = await settingService.query(c);
 
-		//查询所有收件人账号信息
-		let accountList = await orm(c).select().from(account).where(inArray(sql`${account.email} COLLATE NOCASE`, receiveEmail)).all();
-
-		// 对于含+未精确匹配的收件人，获取基础地址账号
-		const plusEmails = receiveEmail.filter(
-			e => e.includes('+') && !accountList.some(a => a.email.toLowerCase() === e.toLowerCase())
-		);
-		const baseAccounts = [];
-		if (plusEmails.length > 0) {
-			const baseEmails = [...new Set(
-				plusEmails.map(e => emailUtils.getBaseEmail(e)).filter(Boolean)
-			)];
-			const existing = new Set(accountList.map(a => a.email.toLowerCase()));
-			const needed = baseEmails.filter(e => !existing.has(e.toLowerCase()));
-			if (needed.length > 0) {
-				const rows = await orm(c).select().from(account)
-					.where(inArray(sql`${account.email} COLLATE NOCASE`, needed)).all();
-				baseAccounts.push(...rows);
-			}
-		}
-
-		// 合并精确匹配和基础地址匹配的账号用于权限查询
-		const allAccounts = [...accountList, ...baseAccounts];
+		// 和外部来信用同一套规则：已删除的邮箱不收信，+ 标签是否归到原邮箱看设置。
+		const resolvedList = await Promise.all(receiveEmail.map(address => resolveRecipient(c.env, address, plusAddress)));
+		const allAccounts = resolvedList.map(item => item.account).filter(Boolean);
 
 		//查询所有收件人权限身份
 		const userIds = allAccounts.map(accountRow => accountRow.userId);
@@ -1028,7 +1009,7 @@ const emailService = {
 		//封装数据库准备保存到数据库
 		const emailDataList = [];
 
-		for (const email of receiveEmail) {
+		for (const [index, email] of receiveEmail.entries()) {
 
 			//把发件人邮件改成收件
 			const emailValues = {...sendEmailData}
@@ -1039,13 +1020,7 @@ const emailService = {
 			emailValues.toName = emailUtils.getName(email);
 			emailValues.emailId = null;
 
-			let accountRow = allAccounts.find(accountRow => accountRow.email.toLowerCase() === email.toLowerCase());
-
-			// 精确匹配不到时回退到主地址（去掉 +tag）
-			if (!accountRow && email.includes('+')) {
-				const baseEmail = emailUtils.getBaseEmail(email);
-				accountRow = allAccounts.find(accountRow => accountRow.email.toLowerCase() === baseEmail.toLowerCase());
-			}
+			const accountRow = resolvedList[index].account;
 
 			//如果收件人存在就把邮件信息改成收件人的
 			if (accountRow) {

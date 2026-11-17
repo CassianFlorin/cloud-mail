@@ -36,8 +36,18 @@ const dbInit = {
 		await this.v3_5DB(c);
 		await this.v3_5_1DB(c);
 		await this.sendflareDB(c);
+		await this.receiveRuleDB(c);
 		await settingService.refresh(c);
 		return c.text('success');
+	},
+
+	// 分支自有迁移：+ 标签地址是否归到原邮箱，默认开启以保持原有行为。
+	async receiveRuleDB(c) {
+		try {
+			await c.env.db.prepare(`ALTER TABLE setting ADD COLUMN plus_address INTEGER NOT NULL DEFAULT 0;`).run();
+		} catch (e) {
+			console.warn(`跳过字段：${e.message}`);
+		}
 	},
 
 	// 分支自有迁移，独立命名以免与上游版本号冲突。

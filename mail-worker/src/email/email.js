@@ -1,6 +1,5 @@
 import PostalMime from 'postal-mime';
 import emailService from '../service/email-service';
-import accountService from '../service/account-service';
 import settingService from '../service/setting-service';
 import attService from '../service/att-service';
 import constant from '../const/constant';
@@ -8,11 +7,11 @@ import fileUtils from '../utils/file-utils';
 import { emailConst, isDel, settingConst } from '../const/entity-const';
 import emailUtils from '../utils/email-utils';
 import roleService from '../service/role-service';
-import userService from '../service/user-service';
 import telegramService from '../service/telegram-service';
 import aiService from '../service/ai-service';
 import webhookService from '../service/webhook-service';
 import { notifyMailWs } from '../websocket/notify';
+import { resolveRecipient } from './recipient';
 
 export async function email(message, env, ctx) {
 
@@ -32,6 +31,7 @@ export async function email(message, env, ctx) {
 			ruleType,
 			r2Domain,
 			noRecipient,
+			plusAddress,
 			blackSubject,
 			blackContent,
 			blackFrom,
@@ -63,24 +63,11 @@ export async function email(message, env, ctx) {
 			return;
 		}
 
-		let account = await accountService.selectByEmailIncludeDel({ env: env }, message.to);
-
-		if (!account) {
-			const baseEmail = emailUtils.getBaseEmail(message.to);
-			if (baseEmail && baseEmail !== message.to) {
-				account = await accountService.selectByEmailIncludeDel({ env: env }, baseEmail);
-			}
-		}
+		const { account, userRow } = await resolveRecipient(env, message.to, plusAddress);
 
 		if (!account && noRecipient === settingConst.noRecipient.CLOSE) {
 			message.setReject('Recipient not found');
 			return;
-		}
-
-		let userRow = {}
-
-		if (account) {
-			 userRow = await userService.selectByIdIncludeDel({ env: env }, account.userId);
 		}
 
 		if (account && userRow.email !== env.admin) {

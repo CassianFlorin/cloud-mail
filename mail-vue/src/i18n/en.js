@@ -419,6 +419,8 @@ const en = {
     popUp: 'Pop up',
     noRecipientTitle: 'No recipient',
     noRecipientDesc: 'Emails can be received even without a registered email address',
+    plusAddressTitle: 'Plus addressing',
+    plusAddressDesc: 'When on, mail to a+tag@ is delivered to a@. When off, only exact addresses receive mail',
     preview: 'Preview',
     help: 'Help',
     document: 'Document',

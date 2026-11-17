@@ -1,7 +1,7 @@
 import KvConst from '../const/kv-const';
 import setting from '../entity/setting';
 import orm from '../entity/orm';
-import {verifyRecordType} from '../const/entity-const';
+import { verifyRecordType, settingConst } from '../const/entity-const';
 import fileUtils from '../utils/file-utils';
 import r2Service from './r2-service';
 import constant from '../const/constant';
@@ -37,6 +37,7 @@ const settingService = {
 		// 迁移前缓存的设置没有该字段。
 		setting.sendflareTokens ||= {};
 		setting.sendProvider ||= '';
+		setting.plusAddress ??= 0;
 
 		let domainList = c.env.domain;
 
@@ -144,6 +145,11 @@ const settingService = {
 
 		if (params.sendProvider !== undefined && !['', 'cloudflare', 'resend', 'sendflare'].includes(params.sendProvider)) {
 			throw new BizError(t('invalidSendProvider'));
+		}
+
+		if (params.plusAddress !== undefined) {
+			params.plusAddress = Number(params.plusAddress) === settingConst.plusAddress.CLOSE
+				? settingConst.plusAddress.CLOSE : settingConst.plusAddress.OPEN;
 		}
 
 		if (params.autoRefresh !== undefined) {

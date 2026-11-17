@@ -187,6 +187,18 @@
                 </div>
               </div>
               <div class="setting-item">
+                <div>
+                  <span>{{ $t('plusAddressTitle') }}</span>
+                  <el-tooltip effect="dark" :content="$t('plusAddressDesc')">
+                    <Icon class="warning" icon="fe:warning" width="18" height="18"/>
+                  </el-tooltip>
+                </div>
+                <div>
+                  <el-switch @change="change" :before-change="beforeChange" :active-value="0" :inactive-value="1"
+                             v-model="setting.plusAddress"/>
+                </div>
+              </div>
+              <div class="setting-item">
                 <div><span>{{ $t('sendProvider') }}</span></div>
                 <div>
                   <el-select
