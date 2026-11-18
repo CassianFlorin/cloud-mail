@@ -29,3 +29,8 @@ mail-vue/dist
 .env.local
 .venv
 git-tools.js
+
+# Personal deployment config and records stay local, never public.
+/DEPLOYMENT.md
+/resend-dns.zone
+mail-worker/wrangler.personal.toml
