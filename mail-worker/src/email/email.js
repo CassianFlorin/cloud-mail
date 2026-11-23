@@ -11,7 +11,7 @@ import telegramService from '../service/telegram-service';
 import aiService from '../service/ai-service';
 import webhookService from '../service/webhook-service';
 import { notifyMailWs } from '../websocket/notify';
-import { resolveRecipient } from './recipient';
+import { resolveRecipient, rejectsUnknownRecipient } from './recipient';
 
 export async function email(message, env, ctx) {
 
@@ -31,6 +31,7 @@ export async function email(message, env, ctx) {
 			ruleType,
 			r2Domain,
 			noRecipient,
+			catchAllDomain,
 			plusAddress,
 			blackSubject,
 			blackContent,
@@ -65,7 +66,7 @@ export async function email(message, env, ctx) {
 
 		const { account, userRow } = await resolveRecipient(env, message.to, plusAddress);
 
-		if (!account && noRecipient === settingConst.noRecipient.CLOSE) {
+		if (!account && rejectsUnknownRecipient(catchAllDomain, message.to, noRecipient)) {
 			message.setReject('Recipient not found');
 			return;
 		}

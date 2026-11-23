@@ -30,3 +30,17 @@ export async function resolveRecipient(env, to, plusAddress) {
 
 	return { account, userRow };
 }
+
+// 后台「任意地址收信」里选中的域名任何地址都收：没有对应邮箱的信进未认领邮件，
+// 不受「无人收件」开关影响。其他域名仍按开关处理。
+export function isCatchAllDomain(catchAllDomain, to) {
+	const list = Array.isArray(catchAllDomain) ? catchAllDomain
+		: typeof catchAllDomain === 'string' ? catchAllDomain.split(',') : [];
+	const domain = emailUtils.getDomain(to).trim().toLowerCase();
+	return !!domain && list.some(item => String(item).trim().toLowerCase() === domain);
+}
+
+// 没有对应邮箱时是否拒收。
+export function rejectsUnknownRecipient(catchAllDomain, to, noRecipient) {
+	return noRecipient === settingConst.noRecipient.CLOSE && !isCatchAllDomain(catchAllDomain, to);
+}

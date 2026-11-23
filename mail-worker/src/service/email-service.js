@@ -28,7 +28,7 @@ import webhookService from './webhook-service';
 import forwardMime from '../utils/forward-mime';
 import verifyUtils from '../utils/verify-utils';
 import { notifyMailWsFromContext } from '../websocket/notify';
-import { resolveRecipient } from '../email/recipient';
+import { resolveRecipient, rejectsUnknownRecipient } from '../email/recipient';
 
 // 官方未公布批量上限，保守分批以兼顾 5 次/秒的速率限制。
 const SENDFLARE_BATCH_SIZE = 50;
@@ -996,7 +996,7 @@ const emailService = {
 	//处理站内邮件发送
 	async HandleOnSiteEmail(c, receiveEmail, sendEmailData, attList) {
 
-		const { noRecipient, plusAddress } = await settingService.query(c);
+		const { noRecipient, plusAddress, catchAllDomain } = await settingService.query(c);
 
 		// 和外部来信用同一套规则：已删除的邮箱不收信，+ 标签是否归到原邮箱看设置。
 		const resolvedList = await Promise.all(receiveEmail.map(address => resolveRecipient(c.env, address, plusAddress)));
@@ -1059,7 +1059,7 @@ const emailService = {
 				emailValues.status = emailConst.status.NOONE;
 
 				//如果无人收件关闭改为拒收
-				if (noRecipient === settingConst.noRecipient.CLOSE) {
+				if (rejectsUnknownRecipient(catchAllDomain, email, noRecipient)) {
 					emailValues.status = emailConst.status.BOUNCED;
 					emailValues.message = `Recipient not found: <${email}>`;
 				}

@@ -37,8 +37,18 @@ const dbInit = {
 		await this.v3_5_1DB(c);
 		await this.sendflareDB(c);
 		await this.receiveRuleDB(c);
+		await this.catchAllDB(c);
 		await settingService.refresh(c);
 		return c.text('success');
+	},
+
+	// 分支自有迁移：哪些域名不用先建邮箱就能收信，逗号分隔，默认没有。
+	async catchAllDB(c) {
+		try {
+			await c.env.db.prepare(`ALTER TABLE setting ADD COLUMN catch_all_domain TEXT NOT NULL DEFAULT '';`).run();
+		} catch (e) {
+			console.warn(`跳过字段：${e.message}`);
+		}
 	},
 
 	// 分支自有迁移：+ 标签地址是否归到原邮箱，默认开启以保持原有行为。

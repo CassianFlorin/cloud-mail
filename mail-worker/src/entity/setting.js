@@ -37,6 +37,7 @@ export const setting = sqliteTable('setting', {
 	notice: integer('notice').default(0).notNull(),
 	noRecipient: integer('no_recipient').default(1).notNull(),
 	plusAddress: integer('plus_address').default(0).notNull(),
+	catchAllDomain: text('catch_all_domain').default('').notNull(),
 	loginDomain: integer('login_domain').default(0).notNull(),
 	bucket: text('bucket').default('').notNull(),
 	region: text('region').default('').notNull(),

@@ -68,6 +68,8 @@ const settingService = {
 		setting.projectLink = projectLink;
 
 		setting.emailPrefixFilter = setting.emailPrefixFilter.split(",").filter(Boolean);
+		// 迁移前缓存的设置没有该字段。
+		setting.catchAllDomain = String(setting.catchAllDomain || '').split(',').filter(Boolean);
 		setting.autoRefresh = Number(setting.autoRefresh) === 1 ? 1 : 2; // 1 关闭，2 开启
 
 		c.set?.('setting', setting);
@@ -150,6 +152,13 @@ const settingService = {
 		if (params.plusAddress !== undefined) {
 			params.plusAddress = Number(params.plusAddress) === settingConst.plusAddress.CLOSE
 				? settingConst.plusAddress.CLOSE : settingConst.plusAddress.OPEN;
+		}
+
+		if (params.catchAllDomain !== undefined) {
+			const list = Array.isArray(params.catchAllDomain) ? params.catchAllDomain : String(params.catchAllDomain).split(',');
+			const allowed = settingData.domainList.map(item => item.slice(1).toLowerCase());
+			const picked = list.map(item => String(item).trim().replace(/^@/, '').toLowerCase()).filter(item => allowed.includes(item));
+			params.catchAllDomain = [...new Set(picked)].join(',');
 		}
 
 		if (params.autoRefresh !== undefined) {

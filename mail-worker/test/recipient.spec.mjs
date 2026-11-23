@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveRecipient } from '../.wrangler/recipient-tests.mjs';
+import { resolveRecipient, isCatchAllDomain, rejectsUnknownRecipient } from '../.wrangler/recipient-tests.mjs';
 
 const OPEN = 0;
 const CLOSE = 1;
@@ -49,4 +49,21 @@ test('plus addressing off accepts only exact addresses', async () => {
 
 test('missing setting keeps the old plus-address behaviour', async () => {
 	assert.equal((await resolveRecipient(env, 'me+shop@example.com', undefined)).account.accountId, 1);
+});
+
+test('catch-all domains accept unknown addresses even with no-recipient off', () => {
+	const catchAll = ['catch.example'];
+	assert.equal(rejectsUnknownRecipient(catchAll, 'anything@catch.example', CLOSE), false);
+	assert.equal(rejectsUnknownRecipient(catchAll, 'Any@CATCH.Example', CLOSE), false);
+	assert.equal(rejectsUnknownRecipient(catchAll, 'random@example.com', CLOSE), true);
+	assert.equal(rejectsUnknownRecipient(catchAll, 'random@example.com', OPEN), false);
+});
+
+test('catch-all list accepts a comma string and ignores a missing setting', () => {
+	assert.equal(isCatchAllDomain('a.example, catch.example', 'x@catch.example'), true);
+	assert.equal(isCatchAllDomain(undefined, 'x@catch.example'), false);
+	assert.equal(isCatchAllDomain([], 'x@catch.example'), false);
+	assert.equal(isCatchAllDomain(['catch.example'], 'x@sub.catch.example'), false);
+	assert.equal(isCatchAllDomain(['catch.example'], 'not-an-address'), false);
+	assert.equal(rejectsUnknownRecipient(undefined, 'x@catch.example', CLOSE), true);
 });

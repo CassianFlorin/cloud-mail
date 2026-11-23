@@ -188,6 +188,32 @@
               </div>
               <div class="setting-item">
                 <div>
+                  <span>{{ $t('catchAllDomainTitle') }}</span>
+                  <el-tooltip effect="dark" :content="$t('catchAllDomainDesc')">
+                    <Icon class="warning" icon="fe:warning" width="18" height="18"/>
+                  </el-tooltip>
+                </div>
+                <div>
+                  <el-select
+                      @change="changeField('catchAllDomain', $event)"
+                      style="width: 180px;"
+                      v-model="setting.catchAllDomain"
+                      multiple
+                      collapse-tags
+                      collapse-tags-tooltip
+                      :placeholder="$t('catchAllDomainNone')"
+                  >
+                    <el-option
+                        v-for="item in settingStore.domainList"
+                        :key="item"
+                        :value="item.slice(1)"
+                        :label="item.slice(1)"
+                    />
+                  </el-select>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div>
                   <span>{{ $t('plusAddressTitle') }}</span>
                   <el-tooltip effect="dark" :content="$t('plusAddressDesc')">
                     <Icon class="warning" icon="fe:warning" width="18" height="18"/>
