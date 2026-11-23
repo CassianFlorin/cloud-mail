@@ -62,7 +62,17 @@ await build({
 	bundle: true,
 	// Node's bundled CommonJS dependencies still need a real require function.
 	banner: { js: "import { createRequire as nodeRequire } from 'node:module'; const require = nodeRequire(import.meta.url);" },
-	// Workers-only modules are imported lazily and never reached by these tests.
+	// cloudflare:workers is imported statically by the MailHub Durable Object, so it gets a stub base class.
+	plugins: [{
+		name: 'workers-runtime-stub',
+		setup(build) {
+			build.onResolve({ filter: /^cloudflare:workers$/ }, () => ({ path: 'workers', namespace: 'cf-stub' }));
+			build.onLoad({ filter: /.*/, namespace: 'cf-stub' }, () => ({
+				contents: 'export class DurableObject { constructor(ctx, env) { this.ctx = ctx; this.env = env; } }'
+			}));
+		}
+	}],
+	// Other Workers-only modules are imported lazily and never reached by these tests.
 	external: ['cloudflare:*'],
 	platform: 'node',
 	format: 'esm'

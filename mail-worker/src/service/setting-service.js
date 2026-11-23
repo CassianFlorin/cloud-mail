@@ -1,7 +1,7 @@
 import KvConst from '../const/kv-const';
 import setting from '../entity/setting';
 import orm from '../entity/orm';
-import {verifyRecordType} from '../const/entity-const';
+import { verifyRecordType, settingConst } from '../const/entity-const';
 import fileUtils from '../utils/file-utils';
 import r2Service from './r2-service';
 import constant from '../const/constant';
@@ -37,6 +37,7 @@ const settingService = {
 		// 迁移前缓存的设置没有该字段。
 		setting.sendflareTokens ||= {};
 		setting.sendProvider ||= '';
+		setting.plusAddress ??= 0;
 
 		let domainList = c.env.domain;
 
@@ -67,22 +68,20 @@ const settingService = {
 		setting.projectLink = projectLink;
 
 		setting.emailPrefixFilter = setting.emailPrefixFilter.split(",").filter(Boolean);
+		// 迁移前缓存的设置没有该字段。
+		setting.catchAllDomain = String(setting.catchAllDomain || '').split(',').filter(Boolean);
+		setting.autoRefresh = Number(setting.autoRefresh) === 1 ? 1 : 2; // 1 关闭，2 开启
 
 		c.set?.('setting', setting);
 		return setting;
 	},
 
-	async get(c, showSiteKey = false) {
+	async get(c) {
 
 		const [settingRow, recordList] = await Promise.all([
 			await this.query(c),
 			verifyRecordService.selectListByIP(c)
 		]);
-
-
-		if (!showSiteKey) {
-			settingRow.siteKey = settingRow.siteKey ? `${settingRow.siteKey.slice(0, 6)}******` : null;
-		}
 
 		settingRow.secretKey = settingRow.secretKey ? `${settingRow.secretKey.slice(0, 6)}******` : null;
 
@@ -150,6 +149,22 @@ const settingService = {
 			throw new BizError(t('invalidSendProvider'));
 		}
 
+		if (params.plusAddress !== undefined) {
+			params.plusAddress = Number(params.plusAddress) === settingConst.plusAddress.CLOSE
+				? settingConst.plusAddress.CLOSE : settingConst.plusAddress.OPEN;
+		}
+
+		if (params.catchAllDomain !== undefined) {
+			const list = Array.isArray(params.catchAllDomain) ? params.catchAllDomain : String(params.catchAllDomain).split(',');
+			const allowed = settingData.domainList.map(item => item.slice(1).toLowerCase());
+			const picked = list.map(item => String(item).trim().replace(/^@/, '').toLowerCase()).filter(item => allowed.includes(item));
+			params.catchAllDomain = [...new Set(picked)].join(',');
+		}
+
+		if (params.autoRefresh !== undefined) {
+			params.autoRefresh = Number(params.autoRefresh) === 1 ? 1 : 2;
+		}
+
 		await orm(c).update(setting).set({ ...params }).returning().get();
 		await this.refresh(c);
 	},
@@ -209,7 +224,7 @@ const settingService = {
 
 	async websiteConfig(c) {
 
-		const settingRow = await this.get(c, true);
+		const settingRow = await this.get(c);
 		const token = await userContext.getToken(c);
 
 		return {

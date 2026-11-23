@@ -31,6 +31,15 @@ test('single send puts first recipient in to and the rest in cc', async () => {
 	});
 });
 
+test('single send forwards user cc after extra recipients and passes bcc', async () => {
+	const calls = mockFetch({ code: 0, success: true, data: { emailId: 'id-2' } });
+	await service.send('tok', {
+		...base, receiveEmail: ['a@x.com', 'b@x.com'], ccEmail: ['c@x.com'], bccEmail: ['d@x.com']
+	});
+	assert.deepEqual(calls[0].body.cc, ['b@x.com', 'c@x.com']);
+	assert.deepEqual(calls[0].body.bcc, ['d@x.com']);
+});
+
 test('reply sets threading headers and inline attachments keep content id', async () => {
 	const calls = mockFetch({ code: 0, data: { emailId: 'id-2' } });
 	await service.send('tok', {

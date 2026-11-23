@@ -33,9 +33,31 @@ const dbInit = {
 		await this.v3_2DB(c);
 		await this.v3_3DB(c);
 		await this.v3_4DB(c);
+		await this.v3_5DB(c);
+		await this.v3_5_1DB(c);
 		await this.sendflareDB(c);
+		await this.receiveRuleDB(c);
+		await this.catchAllDB(c);
 		await settingService.refresh(c);
 		return c.text('success');
+	},
+
+	// 分支自有迁移：哪些域名不用先建邮箱就能收信，逗号分隔，默认没有。
+	async catchAllDB(c) {
+		try {
+			await c.env.db.prepare(`ALTER TABLE setting ADD COLUMN catch_all_domain TEXT NOT NULL DEFAULT '';`).run();
+		} catch (e) {
+			console.warn(`跳过字段：${e.message}`);
+		}
+	},
+
+	// 分支自有迁移：+ 标签地址是否归到原邮箱，默认开启以保持原有行为。
+	async receiveRuleDB(c) {
+		try {
+			await c.env.db.prepare(`ALTER TABLE setting ADD COLUMN plus_address INTEGER NOT NULL DEFAULT 0;`).run();
+		} catch (e) {
+			console.warn(`跳过字段：${e.message}`);
+		}
 	},
 
 	// 分支自有迁移，独立命名以免与上游版本号冲突。
@@ -51,6 +73,18 @@ const dbInit = {
 				console.warn(`跳过字段：${e.message}`);
 			}
 		}
+	},
+
+	async v3_5_1DB(c) {
+		try {
+			await c.env.db.prepare(`UPDATE setting SET auto_refresh = 2 WHERE auto_refresh != 1`).run(); // 1 关闭，其余改为 2 开启
+		} catch (e) {
+			console.warn(`跳过字段：${e.message}`);
+		}
+	},
+
+	async v3_5DB(c) {
+		await c.env.db.prepare(`CREATE INDEX IF NOT EXISTS idx_email_user_create_time ON email(user_id, create_time)`).run();
 	},
 
 	async v3_4DB(c) {
@@ -712,7 +746,7 @@ const dbInit = {
 			  INSERT INTO setting (
 				register, receive, add_email, many_email, title, auto_refresh, register_verify, add_email_verify
 			  )
-			  SELECT 0, 0, 0, 0, 'Cloud Mail', 0, 1, 1
+			  SELECT 0, 0, 0, 0, 'Cloud Mail', 2, 1, 1
 			  WHERE NOT EXISTS (SELECT 1 FROM setting)
 			`).run();
 		} catch (e) {

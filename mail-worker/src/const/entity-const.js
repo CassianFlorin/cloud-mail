@@ -124,6 +124,11 @@ export const settingConst = {
 		OPEN: 0,
 		CLOSE: 1,
 	},
+	// a+tag@ 是否归到 a@ 收信。
+	plusAddress: {
+		OPEN: 0,
+		CLOSE: 1,
+	},
 	kvStorage: {
 		OPEN: 0,
 		CLOSE: 1

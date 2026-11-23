@@ -163,19 +163,8 @@
                   </el-tooltip>
                 </div>
                 <div>
-                  <el-select
-                      @change="change"
-                      :style="`width: ${ locale === 'en' ? 100 : 80 }px;`"
-                      v-model="setting.autoRefresh"
-                      placeholder="Select"
-                  >
-                    <el-option
-                        v-for="item in authRefreshOptions"
-                        :key="item.value"
-                        :label="item.label"
-                        :value="item.value"
-                    />
-                  </el-select>
+                  <el-switch @change="change" :before-change="beforeChange" :active-value="2" :inactive-value="1"
+                             v-model="setting.autoRefresh"/>
                 </div>
               </div>
               <div class="setting-item">
@@ -195,6 +184,44 @@
                 <div>
                   <el-switch @change="change" :before-change="beforeChange" :active-value="0" :inactive-value="1"
                              v-model="setting.noRecipient"/>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div>
+                  <span>{{ $t('catchAllDomainTitle') }}</span>
+                  <el-tooltip effect="dark" :content="$t('catchAllDomainDesc')">
+                    <Icon class="warning" icon="fe:warning" width="18" height="18"/>
+                  </el-tooltip>
+                </div>
+                <div>
+                  <el-select
+                      @change="changeField('catchAllDomain', $event)"
+                      style="width: 180px;"
+                      v-model="setting.catchAllDomain"
+                      multiple
+                      collapse-tags
+                      collapse-tags-tooltip
+                      :placeholder="$t('catchAllDomainNone')"
+                  >
+                    <el-option
+                        v-for="item in settingStore.domainList"
+                        :key="item"
+                        :value="item.slice(1)"
+                        :label="item.slice(1)"
+                    />
+                  </el-select>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div>
+                  <span>{{ $t('plusAddressTitle') }}</span>
+                  <el-tooltip effect="dark" :content="$t('plusAddressDesc')">
+                    <Icon class="warning" icon="fe:warning" width="18" height="18"/>
+                  </el-tooltip>
+                </div>
+                <div>
+                  <el-switch @change="change" :before-change="beforeChange" :active-value="0" :inactive-value="1"
+                             v-model="setting.plusAddress"/>
                 </div>
               </div>
               <div class="setting-item">
@@ -380,7 +407,7 @@
               <div class="setting-item">
                 <div><span>Site key</span></div>
                 <div class="bot-verify">
-                  <span>{{ setting.siteKey }}</span>
+                  <span>{{ maskSiteKey(setting.siteKey) }}</span>
                   <el-button class="opt-button" size="small" type="primary" @click="turnstileShow = true">
                     <Icon icon="lsicon:edit-outline" width="16" height="16"/>
                   </el-button>
@@ -968,7 +995,7 @@ defineOptions({
   name: 'sys-setting'
 })
 
-const currentVersion = 'v3.4.0'
+const currentVersion = 'v3.5.1'
 const hasUpdate = ref(false)
 let getUpdateErrorCount = 1;
 const {t, locale} = useI18n();
@@ -1073,15 +1100,6 @@ const blackListForm = ref({
 })
 const aiCodeFilter = ref([])
 
-const authRefreshOptions = computed(() => [
-  {label: t('disable'), value: 0},
-  {label: '3s', value: 3},
-  {label: '5s', value: 5},
-  {label: '10s', value: 10},
-  {label: '15s', value: 15},
-  {label: '20s', value: 20},
-])
-
 const tgChatId = ref([])
 const customDomain = ref('')
 const tgBotStatus = ref(0)
@@ -1120,6 +1138,10 @@ const tgMsgLabelWidth = computed(() => locale.value === 'en' ? '120px' : '100px'
 
 getSettings()
 getUpdate()
+
+function maskSiteKey(value) {
+  return value ? `${String(value).slice(0, 6)}******` : ''
+}
 
 function getSettings() {
   settingReady.value = false
